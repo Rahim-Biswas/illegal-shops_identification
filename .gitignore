@@ -1,0 +1,61 @@
+# =========================
+
+# Frontend (Node / React)
+
+# =========================
+
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.cache/
+
+# Logs
+
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# =========================
+
+# Backend (Python)
+
+# =========================
+
+backend/**pycache**/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.env
+backend/venv/
+backend/.venv/
+backend/env/
+
+# =========================
+
+# Common (both)
+
+# =========================
+
+.env
+*.log
+*.sqlite3
+*.db
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# IDEs
+
+.vscode/
+.idea/
+
+# =========================
+
+# Optional (if using Git)
+
+# =========================
+

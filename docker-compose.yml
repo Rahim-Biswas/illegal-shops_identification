@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: geoai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://geoai_user:secure_password@db:5432/geoai_complaints
+      - SECRET_KEY=production-secret-key-change-this
+      - DEBUG=False
+      - ALLOWED_ORIGINS=["http://localhost:3000","http://frontend:3000"]
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+    command: gunicorn -w 4 -b 0.0.0.0:8000 src.main:app
+    networks:
+      - geoai-network
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: geoai-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://backend:8000/api
+    depends_on:
+      - backend
+    networks:
+      - geoai-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: geoai-db
+    environment:
+      - POSTGRES_DB=geoai_complaints
+      - POSTGRES_USER=geoai_user
+      - POSTGRES_PASSWORD=secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - geoai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geoai_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nginx Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: geoai-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - geoai-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  geoai-network:
+    driver: bridge
