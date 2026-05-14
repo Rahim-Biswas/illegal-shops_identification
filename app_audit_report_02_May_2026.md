@@ -1,4 +1,4 @@
-# GeoAI Complaint System — Full Application Audit
+# GEO AI Based Illegal Shop Identification Application
 
 ## 1. API Authorization Matrix
 
