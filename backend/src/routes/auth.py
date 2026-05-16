@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from src.database import get_db
-from src.models import User
+from src.models import User, UserRole
 from src.schemas import LoginRequest, TokenResponse, UserCreate, UserResponse
 from src.security import (
     hash_password,
@@ -54,7 +54,7 @@ def register(
             detail="Username already taken"
         )
     
-    # Create new user
+    # Create new user with regular user role only
     db_user = User(
         email=user_data.email,
         username=user_data.username,
@@ -62,6 +62,7 @@ def register(
         phone=user_data.phone,
         organization=user_data.organization,
         hashed_password=hash_password(user_data.password),
+        role=UserRole.USER,
         is_active=True
     )
     

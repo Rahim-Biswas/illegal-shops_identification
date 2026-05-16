@@ -49,6 +49,19 @@ export const getInitials = (name) => {
     .toUpperCase();
 };
 
+export const ROLE_LABELS = {
+  super_admin: 'Super Admin',
+  municipality_admin: 'Municipality Admin',
+  supervisor: 'Supervisor',
+  field_inspector: 'Field Inspector',
+  auditor: 'Auditor',
+  operator: 'System Operator',
+  admin: 'Administrator',
+  user: 'User',
+};
+
+export const getRoleLabel = (role) => ROLE_LABELS[role] || 'User';
+
 export const truncateText = (text, length = 100) => {
   return text.length > length ? text.substring(0, length) + '...' : text;
 };

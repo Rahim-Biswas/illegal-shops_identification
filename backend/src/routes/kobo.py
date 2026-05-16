@@ -25,7 +25,7 @@ from typing import Optional
 from src.config import settings
 from src.database import get_db
 from src.models import Complaint, ComplaintStatus, User
-from src.security import get_current_admin_user
+from src.security import get_current_admin_user, get_current_user
 
 router = APIRouter(prefix="/api/kobo", tags=["KoboToolbox"])
 
@@ -140,26 +140,46 @@ async def get_kobo_submissions(
     }
 
 
-@router.get("/submissions/{submission_id}")
-async def get_kobo_submission(
-    submission_id: int,
+@router.get("/forms/{asset_uid}")
+async def get_kobo_form_definition(
+    asset_uid: str,
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Fetch a single KoboToolbox submission by ID. Admin only."""
-    if not settings.KOBO_API_TOKEN or not settings.KOBO_ASSET_UID:
+    """
+    Get the form definition (survey structure) from KoboToolbox.
+    Admin only.
+    """
+    if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
-    url = _get_kobo_url(f"assets/{settings.KOBO_ASSET_UID}/data/{submission_id}/")
+    url = _get_kobo_url(f"assets/{asset_uid}/")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(url, headers=KOBO_HEADERS, params={"format": "json"})
+        response = await client.get(url, headers=KOBO_HEADERS)
 
-    if response.status_code == 404:
-        raise HTTPException(status_code=404, detail="Submission not found")
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"KoboToolbox error: {response.status_code}")
+    if response.status_code == 200:
+        data = response.json()
+        return {
+            "uid": data.get("uid"),
+            "name": data.get("name"),
+            "content": data.get("content"),
+        }
+    else:
+        raise HTTPException(status_code=response.status_code, detail=f"Failed to get form: {response.text}")
 
-    return response.json()
+
+@router.delete("/data")
+async def clear_kobo_data(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete all complaints that were synced from KoboToolbox.
+    Admin only.
+    """
+    deleted_count = db.query(Complaint).filter(Complaint.kobo_submission_id.isnot(None)).delete()
+    db.commit()
+    return {"message": f"Deleted {deleted_count} Kobo-synced complaints"}
 
 
 @router.post("/sync")
@@ -290,3 +310,131 @@ async def list_kobo_forms(
     ]
 
     return {"count": len(forms), "forms": forms}
+
+
+@router.post("/forms/{asset_uid}/submit")
+async def submit_to_kobo_form(
+    asset_uid: str,
+    submission_data: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Submit data to a KoboToolbox form.
+    """
+    if not settings.KOBO_API_TOKEN:
+        raise HTTPException(status_code=503, detail="KoboToolbox not configured")
+
+    url = _get_kobo_url(f"assets/{asset_uid}/submissions/")
+
+    # Add metadata
+    submission_data["_submitted_by"] = current_user.username
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=KOBO_HEADERS, json=submission_data)
+
+    if response.status_code == 201:
+        return response.json()
+    else:
+        raise HTTPException(status_code=response.status_code, detail=f"Submission failed: {response.text}")
+
+
+@router.post("/forms")
+async def create_kobo_form(
+    form_data: dict,
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Create a new KoboToolbox form/asset. Admin only.
+    Expects: { name: str, content: { survey: [...], settings: {...} } }
+    """
+    if not settings.KOBO_API_TOKEN:
+        raise HTTPException(status_code=503, detail="KoboToolbox not configured")
+
+    url = _get_kobo_url("assets/")
+
+    payload = {
+        "asset_type": "survey",
+        "name": form_data.get("name", "Untitled Form"),
+        "content": form_data.get("content", {}),
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, headers=KOBO_HEADERS, json=payload)
+
+    if response.status_code in (200, 201):
+        data = response.json()
+        return {
+            "uid": data.get("uid"),
+            "name": data.get("name"),
+            "asset_type": data.get("asset_type"),
+            "deployment_status": data.get("deployment_status"),
+            "url": data.get("url"),
+        }
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to create form in KoboToolbox: {response.text}"
+        )
+
+
+@router.patch("/forms/{asset_uid}")
+async def update_kobo_form(
+    asset_uid: str,
+    form_data: dict,
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Update an existing KoboToolbox form's name and/or content. Admin only.
+    """
+    if not settings.KOBO_API_TOKEN:
+        raise HTTPException(status_code=503, detail="KoboToolbox not configured")
+
+    url = _get_kobo_url(f"assets/{asset_uid}/")
+
+    payload = {}
+    if "name" in form_data:
+        payload["name"] = form_data["name"]
+    if "content" in form_data:
+        payload["content"] = form_data["content"]
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.patch(url, headers=KOBO_HEADERS, json=payload)
+
+    if response.status_code == 200:
+        data = response.json()
+        return {
+            "uid": data.get("uid"),
+            "name": data.get("name"),
+            "content": data.get("content"),
+        }
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to update form: {response.text}"
+        )
+
+
+@router.delete("/forms/{asset_uid}", status_code=204)
+async def delete_kobo_form(
+    asset_uid: str,
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Delete a KoboToolbox form/asset permanently. Admin only.
+    """
+    if not settings.KOBO_API_TOKEN:
+        raise HTTPException(status_code=503, detail="KoboToolbox not configured")
+
+    url = _get_kobo_url(f"assets/{asset_uid}/")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.delete(url, headers=KOBO_HEADERS)
+
+    if response.status_code in (200, 204):
+        return
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to delete form: {response.text}"
+        )
+

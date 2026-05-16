@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     KOBO_API_URL: str = "https://kf.kobotoolbox.org/api/v2/"
     KOBO_API_TOKEN: Optional[str] = None
     KOBO_ASSET_UID: Optional[str] = None
+    KOBO_COMPLAINT_FORM_UID: Optional[str] = None  # UID of form to use for complaint submissions
 
     # --- Admin Seed ---
     ADMIN_EMAIL: str = "admin@geoai.com"

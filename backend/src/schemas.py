@@ -36,6 +36,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """User creation schema."""
     password: str = Field(..., min_length=8)
+    role: Optional[UserRole] = UserRole.USER
 
 
 class UserUpdate(BaseModel):
@@ -103,6 +104,7 @@ class ComplaintUpdate(BaseModel):
     affected_people: Optional[int] = None
     damage_description: Optional[str] = None
     admin_notes: Optional[str] = None
+    dynamic_data: Optional[str] = None
 
 
 class ComplaintResponse(ComplaintBase):
@@ -118,6 +120,7 @@ class ComplaintResponse(ComplaintBase):
     image_url: Optional[str]
     video_url: Optional[str]
     kobo_submission_id: Optional[str]
+    dynamic_data: Optional[str]
     created_at: datetime
     updated_at: datetime
     incident_date: Optional[datetime]

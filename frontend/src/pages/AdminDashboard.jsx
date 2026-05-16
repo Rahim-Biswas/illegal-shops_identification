@@ -21,11 +21,11 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading]       = useState(true);
 
   useEffect(() => {
-    if (user?.role !== 'admin') {
+    if (user?.role && !['admin', 'super_admin'].includes(user.role)) {
       navigate('/complaints');
       return;
     }
-    loadDashboard();
+    if (user) loadDashboard();
   }, [user]);
 
   const loadDashboard = async () => {
@@ -82,12 +82,21 @@ export default function AdminDashboard() {
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
           <p className="text-gray-600 mt-1">System overview and management</p>
         </div>
-        <button
-          onClick={loadDashboard}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-        >
-          <FiRefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate('/admin/forms')}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            <FiFileText size={16} />
+            Form Builder
+          </button>
+          <button
+            onClick={loadDashboard}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            <FiRefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Key Statistics */}
@@ -196,6 +205,13 @@ export default function AdminDashboard() {
           >
             <div className="font-semibold">View Map</div>
             <div className="text-sm opacity-75">Visualize complaints on map</div>
+          </button>
+          <button
+            onClick={() => navigate('/admin/kobo')}
+            className="btn-warning text-left"
+          >
+            <div className="font-semibold">Kobo Data</div>
+            <div className="text-sm opacity-75">Manage KoboToolbox sync</div>
           </button>
         </div>
       </div>

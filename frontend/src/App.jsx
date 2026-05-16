@@ -18,10 +18,18 @@ import ComplaintsList from './pages/ComplaintsList';
 import ComplaintForm from './pages/ComplaintForm';
 import ComplaintDetail from './pages/ComplaintDetail';
 import MapPage from './pages/MapPage';
+import Dashboard from './pages/Dashboard';
+import CaseManagement from './pages/CaseManagement';
+import Scheduling from './pages/Scheduling';
+import Reports from './pages/Reports';
+import IntegrationStatus from './pages/IntegrationStatus';
+import IndoorMap from './pages/IndoorMap';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import Profile from './pages/Profile';
 import KoboDataPage from './pages/KoboDataPage';
+import FormBuilder from './pages/FormBuilder';
+import KoboAdmin from './pages/KoboAdmin';
 
 // --- Protected Route: requires a valid token in the store ---
 // Store is hydrated synchronously from localStorage, so this check
@@ -34,12 +42,22 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// --- Admin Route: requires token + admin role ---
+// --- Role Route: restrict by allowed roles ---
+const RoleRoute = ({ children, allowedRoles = [] }) => {
+  const { token, user } = useAuthStore();
+  if (!token) return <Navigate to="/login" replace />;
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+};
+
+// --- Admin Route: requires token + admin or super admin role ---
 const AdminRoute = ({ children }) => {
   const { token, user } = useAuthStore();
 
   if (!token) return <Navigate to="/login" replace />;
-  if (user && user.role !== 'admin') return <Navigate to="/complaints" replace />;
+  if (user && !['admin', 'super_admin'].includes(user.role)) return <Navigate to="/complaints" replace />;
 
   return children;
 };
@@ -72,8 +90,47 @@ export default function App() {
                     <Route path="/complaints/:id" element={<ComplaintDetail />} />
                     <Route path="/complaints/:id/edit" element={<ComplaintForm />} />
                     <Route path="/profile" element={<Profile />} />
-
-                    {/* ---- Admin-Only Routes ---- */}
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route
+                      path="/tasks"
+                      element={
+                        <RoleRoute allowedRoles={['super_admin', 'municipality_admin', 'supervisor', 'admin']}>
+                          <CaseManagement />
+                        </RoleRoute>
+                      }
+                    />
+                    <Route
+                      path="/scheduling"
+                      element={
+                        <RoleRoute allowedRoles={['super_admin', 'municipality_admin', 'supervisor', 'admin']}>
+                          <Scheduling />
+                        </RoleRoute>
+                      }
+                    />
+                    <Route
+                      path="/reports"
+                      element={
+                        <RoleRoute allowedRoles={['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin']}>
+                          <Reports />
+                        </RoleRoute>
+                      }
+                    />
+                    <Route
+                      path="/integrations"
+                      element={
+                        <RoleRoute allowedRoles={['super_admin', 'municipality_admin', 'operator', 'admin']}>
+                          <IntegrationStatus />
+                        </RoleRoute>
+                      }
+                    />
+                    <Route
+                      path="/indoor-map"
+                      element={
+                        <RoleRoute allowedRoles={['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin']}>
+                          <IndoorMap />
+                        </RoleRoute>
+                      }
+                    />
                     <Route
                       path="/map"
                       element={
@@ -99,6 +156,22 @@ export default function App() {
                       }
                     />
                     <Route
+                      path="/admin/forms"
+                      element={
+                        <AdminRoute>
+                          <FormBuilder />
+                        </AdminRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/kobo"
+                      element={
+                        <AdminRoute>
+                          <KoboAdmin />
+                        </AdminRoute>
+                      }
+                    />
+                    <Route
                       path="/admin/kobo"
                       element={
                         <AdminRoute>
@@ -108,7 +181,7 @@ export default function App() {
                     />
 
                     {/* Default redirect based on nothing matched */}
-                    <Route path="/" element={<Navigate to="/complaints" replace />} />
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

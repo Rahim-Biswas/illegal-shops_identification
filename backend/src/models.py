@@ -12,6 +12,12 @@ Base = declarative_base()
 
 class UserRole(str, enum.Enum):
     """User roles in the system."""
+    SUPER_ADMIN = "super_admin"
+    MUNICIPALITY_ADMIN = "municipality_admin"
+    SUPERVISOR = "supervisor"
+    FIELD_INSPECTOR = "field_inspector"
+    AUDITOR = "auditor"
+    OPERATOR = "operator"
     ADMIN = "admin"
     USER = "user"
 
@@ -75,6 +81,7 @@ class Complaint(Base):
     
     # KoboToolbox integration
     kobo_submission_id = Column(String, unique=True, nullable=True, index=True)
+    dynamic_data = Column(Text, nullable=True)  # JSON string for dynamic form data from Kobo
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -128,3 +135,16 @@ class DownloadLog(Base):
 
     def __repr__(self):
         return f"<DownloadLog(id={self.id}, user_id={self.user_id}, purpose={self.purpose})>"
+
+
+class AppSetting(Base):
+    """Key-value store for application-level settings (e.g., active KoboToolbox form UID)."""
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True, nullable=False)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<AppSetting(key={self.key}, value={self.value})>"

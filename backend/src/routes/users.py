@@ -71,6 +71,44 @@ def list_users(
     return users
 
 
+@router.post("/create-user", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(
+    user_data: UserCreate,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new user account with a specific role.
+    Only admin users may create new system users.
+    """
+    if db.query(User).filter(User.email == user_data.email).first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+
+    if db.query(User).filter(User.username == user_data.username).first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+
+    new_user = User(
+        email=user_data.email,
+        username=user_data.username,
+        full_name=user_data.full_name,
+        phone=user_data.phone,
+        organization=user_data.organization,
+        hashed_password=hash_password(user_data.password),
+        role=user_data.role or UserRole.USER,
+        is_active=True,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
 @router.post("/create-admin", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_admin_user(
     user_data: UserCreate,
@@ -81,34 +119,8 @@ def create_admin_user(
     Create a new admin user (existing admin only).
     Allows creating multiple admin credential sets from the admin UI.
     """
-    # Check email uniqueness
-    if db.query(User).filter(User.email == user_data.email).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-
-    # Check username uniqueness
-    if db.query(User).filter(User.username == user_data.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
-        )
-
-    new_admin = User(
-        email=user_data.email,
-        username=user_data.username,
-        full_name=user_data.full_name,
-        phone=user_data.phone,
-        organization=user_data.organization,
-        hashed_password=hash_password(user_data.password),
-        role=UserRole.ADMIN,   # Always admin role
-        is_active=True,
-    )
-    db.add(new_admin)
-    db.commit()
-    db.refresh(new_admin)
-    return new_admin
+    user_data.role = UserRole.ADMIN
+    return create_user(user_data=user_data, current_user=current_user, db=db)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -120,7 +132,7 @@ def get_user(
     """
     Get user details by ID (admin only or own profile).
     """
-    if current_user.id != user_id and current_user.role != UserRole.ADMIN:
+    if current_user.id != user_id and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this user"

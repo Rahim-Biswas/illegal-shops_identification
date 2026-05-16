@@ -1,6 +1,7 @@
 """
 Complaint management routes.
 """
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -95,7 +96,7 @@ def list_complaints(
     query = db.query(Complaint)
     
     # Filter by user if not admin
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         query = query.filter(Complaint.user_id == current_user.id)
     
     # Apply filters
@@ -277,7 +278,7 @@ def get_complaint(
         )
     
     # Check authorization
-    if complaint.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+    if complaint.user_id != current_user.id and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this complaint"
@@ -319,7 +320,7 @@ def update_complaint(
         )
     
     # Check authorization
-    if complaint.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+    if complaint.user_id != current_user.id and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this complaint"
@@ -404,7 +405,7 @@ def add_comment(
         complaint_id=complaint_id,
         user_id=current_user.id,
         comment_text=comment_data.comment_text,
-        is_admin_comment=current_user.role == UserRole.ADMIN
+        is_admin_comment=current_user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
     )
     
     db.add(db_comment)
@@ -443,7 +444,7 @@ def get_comments(
         )
     
     # Check authorization
-    if complaint.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+    if complaint.user_id != current_user.id and current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view comments"

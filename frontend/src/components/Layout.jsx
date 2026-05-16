@@ -6,11 +6,12 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  FiMenu, FiX, FiLogOut, FiUser, FiMap, FiFileText,
+  FiMenu, FiX, FiLogOut, FiMap, FiFileText,
   FiSettings, FiUsers, FiDatabase, FiPlusCircle, FiGrid, FiChevronRight,
+  FiCalendar, FiLayers, FiBarChart2, FiShield, FiHome,
 } from 'react-icons/fi';
 import { useAuthStore } from '../store/store';
-import { getInitials } from '../utils/helpers';
+import { getInitials, getRoleLabel } from '../utils/helpers';
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -23,20 +24,24 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = ['admin', 'super_admin'].includes(user?.role);
 
-  // Navigation items — "My Profile" removed (use the user card below instead)
+  // Navigation items — role-aware RBAC navigation
   const navItems = [
-    // ---- Shared (all users) ----
-    { icon: FiFileText,   label: 'Complaints',      path: '/complaints',     adminOnly: false },
-    { icon: FiPlusCircle, label: 'Submit Complaint', path: '/complaints/new', adminOnly: false },
-    { icon: FiMap,        label: 'Map View',         path: '/map',            adminOnly: false },
-
-    // ---- Admin only ----
-    { icon: FiGrid,     label: 'Admin Dashboard',  path: '/admin',       adminOnly: true },
-    { icon: FiDatabase, label: 'KoboToolbox Data', path: '/admin/kobo',  adminOnly: true },
-    { icon: FiUsers,    label: 'Manage Users',      path: '/admin/users', adminOnly: true },
-  ].filter((item) => !item.adminOnly || isAdmin);
+    { icon: FiHome,        label: 'Dashboard',      path: '/dashboard',   allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiFileText,    label: 'Complaints',     path: '/complaints',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiMap,         label: 'Map View',       path: '/map',         allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiGrid,        label: 'Case Board',     path: '/tasks',       allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
+    { icon: FiCalendar,    label: 'Scheduling',     path: '/scheduling',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
+    { icon: FiBarChart2,   label: 'Reports',        path: '/reports',     allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin'] },
+    { icon: FiDatabase,    label: 'Integrations',   path: '/integrations', allowedRoles: ['super_admin', 'municipality_admin', 'operator', 'admin'] },
+    { icon: FiLayers,      label: 'Indoor Map',     path: '/indoor-map',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin'] },
+    // ── Admin-only section ──
+    { icon: FiGrid,        label: 'Admin Panel',    path: '/admin',       allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiDatabase,    label: 'Kobo Data',      path: '/admin/kobo',  allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiUsers,       label: 'Manage Users',   path: '/admin/users', allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiSettings,    label: 'Form Builder',   path: '/admin/forms', allowedRoles: ['super_admin', 'admin'] },
+  ].filter((item) => item.allowedRoles.includes(user?.role));
 
   const isActive = (path) =>
     location.pathname === path || location.pathname.startsWith(path + '/');
@@ -115,8 +120,8 @@ export default function Layout({ children }) {
                   <p className="text-sm font-medium text-white truncate leading-tight">
                     {user?.full_name || user?.username || 'User'}
                   </p>
-                  <p className={`text-xs capitalize truncate ${isAdmin ? 'text-blue-300' : 'text-slate-400'}`}>
-                    {isAdmin ? 'Administrator' : 'User'}
+                  <p className="text-xs capitalize truncate text-slate-400">
+                    {getRoleLabel(user?.role)}
                   </p>
                 </div>
                 <FiSettings size={14} className="text-slate-500 group-hover:text-slate-300 flex-shrink-0 transition-colors" />

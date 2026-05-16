@@ -8,11 +8,11 @@
 import { useState, useEffect } from 'react';
 import { userApi } from '../services/api';
 import { useAuthStore } from '../store/store';
-import { formatDate } from '../utils/helpers';
+import { formatDate, getRoleLabel, ROLE_LABELS } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import {
   FiTrash2, FiLock, FiUnlock, FiLoader, FiPlus,
-  FiShield, FiUsers, FiUserCheck, FiX, FiEye, FiEyeOff
+  FiUsers, FiUserCheck, FiX, FiEye, FiEyeOff, FiShield, FiEdit2
 } from 'react-icons/fi';
 
 // ============ Create Admin Modal ============
@@ -24,6 +24,7 @@ function CreateAdminModal({ onClose, onSuccess }) {
     password: '',
     phone: '',
     organization: '',
+    role: 'user',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,12 +48,12 @@ function CreateAdminModal({ onClose, onSuccess }) {
 
     setIsLoading(true);
     try {
-      await userApi.createAdmin(form);
-      toast.success(`Admin account created: ${form.email}`);
+      await userApi.createUser(form);
+      toast.success(`User account created: ${form.email}`);
       onSuccess();
       onClose();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create admin user.');
+      setError(err.response?.data?.detail || 'Failed to create user account.');
     } finally {
       setIsLoading(false);
     }
@@ -68,8 +69,8 @@ function CreateAdminModal({ onClose, onSuccess }) {
               <FiShield size={18} className="text-purple-600" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Create Admin Account</h2>
-              <p className="text-xs text-gray-500">New admin will have full system access</p>
+              <h2 className="text-base font-bold text-gray-900">Create User Account</h2>
+              <p className="text-xs text-gray-500">Create a new account with a role and access level.</p>
             </div>
           </div>
           <button
@@ -168,6 +169,22 @@ function CreateAdminModal({ onClose, onSuccess }) {
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Role</label>
+            <select
+              name="role"
+              value={form.role}
+              onChange={handleChange}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent focus:outline-none"
+            >
+              {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
               {error}
@@ -190,7 +207,7 @@ function CreateAdminModal({ onClose, onSuccess }) {
               {isLoading ? (
                 <><FiLoader size={14} className="animate-spin" /> Creating...</>
               ) : (
-                <><FiShield size={14} /> Create Admin</>
+                <><FiUsers size={14} /> Create User</>
               )}
             </button>
           </div>
@@ -282,7 +299,7 @@ export default function AdminUsers() {
           className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-medium transition-colors shadow"
         >
           <FiPlus size={16} />
-          Create Admin Account
+          Create User Account
         </button>
       </div>
 
@@ -360,7 +377,7 @@ export default function AdminUsers() {
                           : 'bg-blue-100 text-blue-700 border border-blue-200'
                       }`}>
                         {u.role === 'admin' && <FiShield size={10} />}
-                        {u.role.toUpperCase()}
+                        {getRoleLabel(u.role)}
                       </span>
                     </td>
                     <td className="px-5 py-4">

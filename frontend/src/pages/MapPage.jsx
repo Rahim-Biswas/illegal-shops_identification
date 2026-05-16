@@ -13,8 +13,9 @@ import VectorSource from 'ol/source/Vector';
 import OSM from 'ol/source/OSM';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
+import Polygon from 'ol/geom/Polygon';
 import { fromLonLat } from 'ol/proj';
-import { Style, Icon, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
+import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
 import { complaintApi } from '../services/api';
 import { useAuthStore } from '../store/store';
 import { toast } from 'react-toastify';
@@ -238,6 +239,7 @@ function DownloadModal({ complaints, onClose }) {
 export default function MapPage() {
   const mapContainer = useRef(null);
   const mapRef       = useRef(null);
+  const districtLayerRef = useRef(null);
   const navigate     = useNavigate();
   const { user }     = useAuthStore();
   const isAdmin      = user?.role === 'admin';
@@ -247,6 +249,7 @@ export default function MapPage() {
   const [selectedComplaint, setSelected]    = useState(null);
   const [showList, setShowList]             = useState(false);
   const [showDownload, setShowDownload]     = useState(false);
+  const [showDistricts, setShowDistricts]   = useState(false);
   const [filters, setFilters]               = useState({ status: '', severity: '' });
 
   // ── Initialise map (once) ──
@@ -255,10 +258,19 @@ export default function MapPage() {
     const vectorSource = new VectorSource();
     const vectorLayer  = new VectorLayer({ source: vectorSource });
 
+    districtLayerRef.current = new VectorLayer({
+      source: new VectorSource(),
+      visible: false,
+      style: new Style({
+        stroke: new Stroke({ color: '#2563eb', width: 2 }),
+        fill: new Fill({ color: 'rgba(37, 99, 235, 0.08)' }),
+      }),
+    });
+
     mapRef.current = new Map({
       target: mapContainer.current,
-      layers: [new TileLayer({ source: new OSM() }), vectorLayer],
-      view: new View({ center: fromLonLat([82, 22]), zoom: 4 }),
+      layers: [new TileLayer({ source: new OSM() }), vectorLayer, districtLayerRef.current],
+      view: new View({ center: fromLonLat([39.6, 24.5]), zoom: 12 }),
     });
 
     mapRef.current.on('click', (event) => {
@@ -271,7 +283,38 @@ export default function MapPage() {
       const hit = mapRef.current.hasFeatureAtPixel(evt.pixel);
       mapRef.current.getTargetElement().style.cursor = hit ? 'pointer' : '';
     });
+    // Add Madinah district demo boundaries
+    const districtCoordinates = [
+      [
+        [39.56, 24.49],
+        [39.59, 24.49],
+        [39.59, 24.52],
+        [39.56, 24.52],
+        [39.56, 24.49],
+      ],
+      [
+        [39.60, 24.50],
+        [39.63, 24.50],
+        [39.63, 24.53],
+        [39.60, 24.53],
+        [39.60, 24.50],
+      ],
+    ];
+
+    const districtFeatures = districtCoordinates.map((polygon) => {
+      return new Feature({
+        geometry: new Polygon([polygon.map((coords) => fromLonLat(coords))]),
+      });
+    });
+
+    districtLayerRef.current.getSource().addFeatures(districtFeatures);
   }, []);
+
+  useEffect(() => {
+    if (districtLayerRef.current) {
+      districtLayerRef.current.setVisible(showDistricts);
+    }
+  }, [showDistricts]);
 
   // ── Load complaints ──
   const loadComplaints = useCallback(async () => {
@@ -375,6 +418,25 @@ export default function MapPage() {
                 Download
               </button>
             )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowDistricts(!showDistricts)}
+              className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                showDistricts
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {showDistricts ? 'Hide Districts' : 'Show Districts'}
+            </button>
+            <button
+              onClick={() => setFilters({ status: '', severity: '' })}
+              className="flex-1 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Reset Filters
+            </button>
           </div>
 
           <div className="grid grid-cols-2 gap-2">

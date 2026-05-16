@@ -54,6 +54,7 @@ export const userApi = {
   deleteUser: (userId) => api.delete(`/users/${userId}`),
   deactivateUser: (userId) => api.patch(`/users/${userId}/deactivate`),
   toggleUserActive: (userId) => api.patch(`/users/${userId}/toggle-active`),
+  createUser: (data) => api.post('/users/create-user', data),
   createAdmin: (data) => api.post('/users/create-admin', data),
 };
 
@@ -93,6 +94,11 @@ export const koboApi = {
   getSubmission: (id) => api.get(`/kobo/submissions/${id}`),
   syncSubmissions: () => api.post('/kobo/sync'),
   getForms: () => api.get('/kobo/forms'),
+  createForm: (data) => api.post('/kobo/forms', data),
+  updateForm: (assetUid, data) => api.patch(`/kobo/forms/${assetUid}`, data),
+  deleteForm: (assetUid) => api.delete(`/kobo/forms/${assetUid}`),
+  getFormDefinition: (assetUid) => api.get(`/kobo/forms/${assetUid}`),
+  submitToForm: (assetUid, data) => api.post(`/kobo/forms/${assetUid}/submit`, data),
 };
 
 export default api;

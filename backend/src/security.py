@@ -120,8 +120,8 @@ async def get_current_user(
 async def get_current_admin_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """Dependency to ensure the current user is an admin."""
-    if current_user.role != UserRole.ADMIN:
+    """Dependency to ensure the current user is an admin (admin or super_admin)."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -131,8 +131,8 @@ async def get_current_admin_user(
 
 # ====================== HELPER FUNCTIONS ======================
 def is_admin(user: User) -> bool:
-    """Check if a user is an admin."""
-    return user.role == UserRole.ADMIN
+    """Check if a user is an admin (admin or super_admin)."""
+    return user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
 
 
 def is_complaint_owner(user: User, complaint_user_id: int) -> bool:
