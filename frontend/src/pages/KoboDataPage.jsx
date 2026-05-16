@@ -29,27 +29,31 @@ import 'ol/ol.css';
 
 // ============ Helpers ============
 
-const DISASTER_COLORS = {
-  landslide: 'bg-amber-100 text-amber-800 border-amber-200',
-  flood: 'bg-blue-100 text-blue-800 border-blue-200',
-  earthquake: 'bg-red-100 text-red-800 border-red-200',
-  cyclone: 'bg-purple-100 text-purple-800 border-purple-200',
-  fire: 'bg-orange-100 text-orange-800 border-orange-200',
+const VIOLATION_COLORS = {
+  'no license': 'bg-red-100 text-red-800 border-red-200',
+  'expired license': 'bg-orange-100 text-orange-800 border-orange-200',
+  'illegal construction': 'bg-amber-100 text-amber-800 border-amber-200',
+  'health violation': 'bg-purple-100 text-purple-800 border-purple-200',
+  'zoning violation': 'bg-blue-100 text-blue-800 border-blue-200',
+  'fire safety': 'bg-rose-100 text-rose-800 border-rose-200',
+  'encroachment': 'bg-yellow-100 text-yellow-800 border-yellow-200',
   default: 'bg-gray-100 text-gray-700 border-gray-200',
 };
 
 const MARKER_COLORS = {
-  landslide: '#f59e0b',
-  flood: '#3b82f6',
-  earthquake: '#ef4444',
-  cyclone: '#8b5cf6',
-  fire: '#f97316',
+  'no license': '#ef4444',
+  'expired license': '#f97316',
+  'illegal construction': '#f59e0b',
+  'health violation': '#8b5cf6',
+  'zoning violation': '#3b82f6',
+  'fire safety': '#f43f5e',
+  'encroachment': '#eab308',
   default: '#6b7280',
 };
 
 function disasterBadgeClass(type) {
   const key = (type || '').toLowerCase();
-  return DISASTER_COLORS[key] || DISASTER_COLORS.default;
+  return VIOLATION_COLORS[key] || VIOLATION_COLORS.default;
 }
 
 function markerColor(type) {
@@ -75,18 +79,24 @@ const formatTime = (timeStr) => {
 
 function submissionsToRows(submissions) {
   return submissions.map((s) => ({
-    'ID':             s.id ?? '',
-    'Reporter Name':  s.reporter_name ?? '',
-    'Disaster Type':  s.disaster_type ?? '',
-    'Incident Date':  s.incident_date ?? '',
-    'Incident Time':  formatTime(s.incident_time),
-    'Latitude':       s.latitude ?? '',
-    'Longitude':      s.longitude ?? '',
-    'Location (raw)': s.location_raw ?? '',
-    'Submitted By':   s.submitted_by ?? '',
-    'Submission Time':s.submission_time ?? '',
-    'Image URL':      s.image_url ?? '',
-    'Status':         s.status ?? '',
+    'ID':                  s.id ?? '',
+    'Inspector Name':      s.inspector_name ?? '',
+    'Inspector ID':        s.inspector_id ?? '',
+    'Municipality Zone':   s.municipality_zone ?? '',
+    'Shop Name':           s.shop_name ?? '',
+    'Shop Owner':          s.shop_owner_name ?? '',
+    'Contact Number':      s.contact_number ?? '',
+    'License Number':      s.license_number ?? '',
+    'Violation Type':      s.violation_type ?? '',
+    'Violation Details':   s.violation_description ?? '',
+    'Action Taken':        s.action_taken ?? '',
+    'Inspection Date':     s.inspection_date ?? '',
+    'Inspection Time':     formatTime(s.inspection_time),
+    'Latitude':            s.latitude ?? '',
+    'Longitude':           s.longitude ?? '',
+    'Submitted By':        s.submitted_by ?? '',
+    'Submission Time':     s.submission_time ?? '',
+    'Image URL':           s.image_url ?? '',
   }));
 }
 
@@ -254,12 +264,13 @@ function KoboMap({ submissions }) {
               <FiX size={14} />
             </button>
             <div className="flex items-center gap-2 mb-2">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border capitalize ${disasterBadgeClass(popupContent.disaster_type)}`}>
-                {popupContent.disaster_type || 'Unknown'}
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border capitalize ${disasterBadgeClass(popupContent.violation_type || popupContent.disaster_type)}`}>
+                {popupContent.violation_type || popupContent.disaster_type || 'Unknown'}
               </span>
             </div>
-            <p className="text-sm font-semibold text-gray-900">{popupContent.reporter_name || 'Unknown reporter'}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{formatDate(popupContent.incident_date)}</p>
+            <p className="text-sm font-semibold text-gray-900">{popupContent.shop_name || 'Unknown Shop'}</p>
+            <p className="text-xs text-gray-600 mt-0.5">Inspector: {popupContent.inspector_name || popupContent.reporter_name || '—'}</p>
+            <p className="text-xs text-gray-500">{formatDate(popupContent.inspection_date || popupContent.incident_date)}</p>
             <p className="text-xs text-gray-400 mt-1 font-mono">
               {popupContent.latitude?.toFixed(5)}, {popupContent.longitude?.toFixed(5)}
             </p>
@@ -357,7 +368,7 @@ export default function KoboDataPage() {
     }
   };
 
-  const disasterTypes = ['all', ...new Set(submissions.map((s) => s.disaster_type).filter(Boolean))];
+  const disasterTypes = ['all', ...new Set(submissions.map((s) => s.violation_type || s.disaster_type).filter(Boolean))];
   const geoSubmissions = filteredSubmissions.filter((s) => s.latitude != null && s.longitude != null);
 
   const dateTag = new Date().toISOString().slice(0, 10);
@@ -369,11 +380,11 @@ export default function KoboDataPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <FiCloud className="text-blue-600" size={22} />
-            KoboToolbox Data
+            KoboToolbox — Shop Inspection Data
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Live data from <strong>GEO AI Complaint system</strong> survey
-            <span className="ml-2 font-mono text-xs text-gray-400">acNYuKP7ZdAigVucAD5eHF</span>
+            Live data from <strong>Illegal Shop Detection &amp; Reporting</strong> survey
+            <span className="ml-2 font-mono text-xs text-gray-400">{settings?.KOBO_ASSET_UID || 'acNYuKP7ZdAigVucAD5eHF'}</span>
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -425,10 +436,10 @@ export default function KoboDataPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Submissions', value: totalCount, icon: <FiCloud size={16} className="text-blue-600" />, bg: 'bg-blue-50 border-blue-100' },
+          { label: 'Total Inspections', value: totalCount, icon: <FiCloud size={16} className="text-blue-600" />, bg: 'bg-blue-50 border-blue-100' },
           { label: 'With GPS', value: geoSubmissions.length, icon: <FiMapPin size={16} className="text-green-600" />, bg: 'bg-green-50 border-green-100' },
-          { label: 'Disaster Types', value: disasterTypes.length - 1, icon: <FiAlertTriangle size={16} className="text-amber-600" />, bg: 'bg-amber-50 border-amber-100' },
-          { label: 'With Photos', value: submissions.filter((s) => s.image_url).length, icon: <FiImage size={16} className="text-purple-600" />, bg: 'bg-purple-50 border-purple-100' },
+          { label: 'Violation Types', value: disasterTypes.length - 1, icon: <FiAlertTriangle size={16} className="text-amber-600" />, bg: 'bg-amber-50 border-amber-100' },
+          { label: 'With Evidence', value: submissions.filter((s) => s.image_url).length, icon: <FiImage size={16} className="text-purple-600" />, bg: 'bg-purple-50 border-purple-100' },
         ].map((s) => (
           <div key={s.label} className={`${s.bg} border rounded-2xl p-4`}>
             <div className="flex items-center gap-2 mb-1">{s.icon}<span className="text-xs text-gray-500 font-medium">{s.label}</span></div>
@@ -459,7 +470,7 @@ export default function KoboDataPage() {
           >
             {disasterTypes.map((t) => (
               <option key={t} value={t}>
-                {t === 'all' ? 'All Types' : t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === 'all' ? 'All Violations' : t.charAt(0).toUpperCase() + t.slice(1)}
               </option>
             ))}
           </select>
@@ -501,10 +512,10 @@ export default function KoboDataPage() {
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
           <div className="px-6 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              {filteredSubmissions.length} of {totalCount} submissions
+              {filteredSubmissions.length} of {totalCount} inspections
             </span>
             <a
-              href="https://kf.kobotoolbox.org/#/forms/acNYuKP7ZdAigVucAD5eHF/data/table"
+              href={`https://kf.kobotoolbox.org/#/forms/${import.meta.env.VITE_KOBO_ASSET_UID || 'acNYuKP7ZdAigVucAD5eHF'}/data/table`}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
@@ -516,7 +527,7 @@ export default function KoboDataPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100">
                 <tr>
-                  {['ID', 'Reporter', 'Disaster Type', 'Date', 'GPS Location', 'Time', 'Photo', 'Submitted By'].map((h) => (
+                  {['ID', 'Inspector', 'Zone', 'Shop Name', 'Owner', 'Violation Type', 'Action', 'Date', 'GPS', 'Evidence'].map((h) => (
                     <th key={h} className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">
                       {h}
                     </th>
@@ -530,39 +541,48 @@ export default function KoboDataPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                          {(sub.reporter_name || '?')[0].toUpperCase()}
+                          {(sub.inspector_name || sub.reporter_name || '?')[0].toUpperCase()}
                         </div>
-                        <span className="font-medium text-gray-900 whitespace-nowrap">{sub.reporter_name || '—'}</span>
+                        <div>
+                          <p className="font-medium text-gray-900 whitespace-nowrap text-xs">{sub.inspector_name || sub.reporter_name || '—'}</p>
+                          {sub.inspector_id && <p className="text-gray-400 text-xs">{sub.inspector_id}</p>}
+                        </div>
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{sub.municipality_zone || '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${disasterBadgeClass(sub.disaster_type)}`}>
-                        {sub.disaster_type || 'Unknown'}
+                      <p className="font-medium text-gray-900 text-xs whitespace-nowrap">{sub.shop_name || '—'}</p>
+                      {sub.license_number && <p className="text-gray-400 text-xs">Lic: {sub.license_number}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{sub.shop_owner_name || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border capitalize ${disasterBadgeClass(sub.violation_type || sub.disaster_type)}`}>
+                        {sub.violation_type || sub.disaster_type || 'Unknown'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 max-w-[140px] truncate" title={sub.action_taken}>
+                      {sub.action_taken || '—'}
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <FiCalendar size={12} className="text-gray-400" />
-                        {formatDate(sub.incident_date)}
+                        <span className="text-xs">{formatDate(sub.inspection_date || sub.incident_date)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       {sub.latitude != null ? (
                         <span className="flex items-center gap-1 text-xs text-gray-600 font-mono">
                           <FiMapPin size={11} className="text-green-500 flex-shrink-0" />
-                          {sub.latitude.toFixed(5)},&nbsp;{sub.longitude.toFixed(5)}
+                          {sub.latitude.toFixed(4)},{sub.longitude.toFixed(4)}
                         </span>
                       ) : (
                         <span className="text-gray-300 text-xs">No GPS</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {formatTime(sub.incident_time) || '—'}
-                    </td>
                     <td className="px-4 py-3">
                       {sub.image_url ? (
                         <button
-                          onClick={() => setSelectedPhoto({ url: sub.image_url, reporter: sub.reporter_name, type: sub.disaster_type })}
+                          onClick={() => setSelectedPhoto({ url: sub.image_url, reporter: sub.inspector_name || sub.reporter_name, type: sub.violation_type || sub.disaster_type })}
                           className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
                         >
                           <FiImage size={13} /> View
@@ -571,7 +591,6 @@ export default function KoboDataPage() {
                         <span className="text-gray-300 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{sub.submitted_by || '—'}</td>
                   </tr>
                 ))}
               </tbody>

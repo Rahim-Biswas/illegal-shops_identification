@@ -1,20 +1,27 @@
 """
 KoboToolbox API integration routes.
 
-Fetches and syncs survey submissions from the 'GEO AI Complaint system' form.
-Asset UID: acNYuKP7ZdAigVucAD5eHF
+Fetches and syncs survey submissions from the
+'Illegal Shop Detection & Reporting' KoboToolbox form.
 
-KoboToolbox field mapping:
-  _id              → kobo_submission_id
-  Name             → reporter name (stored in description)
-  Enter_a_date     → incident_date
-  Disaster_Name    → disaster_type
-  Location         → "lat lon alt accuracy" string → latitude, longitude
-  Enter_a_time     → incident time (merged with date)
-  Click_a_Photo    → attachment filename → image_url (direct download link)
-  _geolocation     → [lat, lon] array
-  _submission_time → created_at reference
-  _submitted_by    → username
+KoboToolbox field mapping (new form):
+  _id                  → kobo_submission_id
+  Inspector_Name       → inspector_name
+  Inspector_ID         → inspector_id
+  Municipality_Zone    → municipality_zone
+  Shop_Name            → shop_name
+  Shop_Owner_Name      → shop_owner_name
+  Contact_Number       → contact_number
+  License_Number       → license_number
+  Violation_Type       → violation_type  (mapped → disaster_type for DB compat)
+  Violation_Description→ violation_description (→ description)
+  GPS_Location         → "lat lon alt accuracy" → latitude, longitude
+  Action_Taken         → action_taken
+  Evidence_Photo       → attachment filename → image_url
+  Inspection_Date      → inspection_date (→ incident_date)
+  Inspection_Time      → inspection_time
+  _submission_time     → submission_time
+  _submitted_by        → submitted_by
 """
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -34,14 +41,21 @@ KOBO_HEADERS = {
     "Accept": "application/json",
 }
 
+# Track last auto-sync result (in-memory, resets on restart)
+_last_sync = {"time": None, "created": 0, "skipped": 0, "error": None}
+
+
+def get_sync_status():
+    return _last_sync
+
 
 def _get_kobo_url(path: str) -> str:
     base = settings.KOBO_API_URL.rstrip("/")
     return f"{base}/{path.lstrip('/')}"
 
 
-def _parse_location(location_str: Optional[str]) -> tuple[Optional[float], Optional[float]]:
-    """Parse KoboToolbox location string 'lat lon alt accuracy' into (lat, lon)."""
+def _parse_gps(location_str: Optional[str]) -> tuple[Optional[float], Optional[float]]:
+    """Parse KoboToolbox GPS string 'lat lon alt accuracy' into (lat, lon)."""
     if not location_str:
         return None, None
     parts = location_str.strip().split()
@@ -59,7 +73,138 @@ def _build_image_url(submission: dict) -> Optional[str]:
     return None
 
 
+def _enrich_submission(sub: dict) -> dict:
+    """
+    Map raw KoboToolbox submission fields to a clean frontend-friendly dict.
+    Supports BOTH the legacy GEO AI Complaint form fields AND the new
+    Illegal Shop Detection form fields — whichever are present.
+    """
+    # --- GPS ---
+    # New form: GPS_Location field
+    lat, lon = _parse_gps(sub.get("GPS_Location") or sub.get("Location"))
+    geo = sub.get("_geolocation", [None, None])
+    if lat is None and geo and len(geo) >= 2:
+        lat, lon = geo[0], geo[1]
+
+    # --- Core identity fields (new form first, legacy fallback) ---
+    inspector_name   = sub.get("Inspector_Name") or sub.get("Name", "")
+    inspector_id     = sub.get("Inspector_ID", "")
+    municipality_zone = sub.get("Municipality_Zone", "")
+    shop_name        = sub.get("Shop_Name", "")
+    shop_owner_name  = sub.get("Shop_Owner_Name", "")
+    contact_number   = sub.get("Contact_Number", "")
+    license_number   = sub.get("License_Number", "")
+    violation_type   = (
+        sub.get("Violation_Type")
+        or sub.get("Disaster_Name")
+        or "Unknown"
+    )
+    violation_description = sub.get("Violation_Description", "")
+    action_taken     = sub.get("Action_Taken", "")
+    inspection_date  = (
+        sub.get("Inspection_Date")
+        or sub.get("Enter_a_date")
+    )
+    inspection_time  = (
+        sub.get("Inspection_Time")
+        or sub.get("Enter_a_time")
+    )
+
+    return {
+        # Meta
+        "id":                  sub.get("_id"),
+        "uuid":                sub.get("_uuid"),
+        "submission_time":     sub.get("_submission_time"),
+        "submitted_by":        sub.get("_submitted_by"),
+        "status":              sub.get("_status"),
+        "validation_status":   sub.get("_validation_status", {}),
+        "tags":                sub.get("_tags", []),
+        "notes":               sub.get("_notes", []),
+        "attachments":         sub.get("_attachments", []),
+
+        # Inspector
+        "inspector_name":      inspector_name,
+        "inspector_id":        inspector_id,
+        "municipality_zone":   municipality_zone,
+
+        # Shop details
+        "shop_name":           shop_name,
+        "shop_owner_name":     shop_owner_name,
+        "contact_number":      contact_number,
+        "license_number":      license_number,
+
+        # Violation
+        "violation_type":      violation_type,
+        "violation_description": violation_description,
+        "action_taken":        action_taken,
+
+        # Location
+        "latitude":            lat,
+        "longitude":           lon,
+        "location_raw":        sub.get("GPS_Location") or sub.get("Location"),
+
+        # Date / Time
+        "inspection_date":     inspection_date,
+        "inspection_time":     inspection_time,
+
+        # Media
+        "image_url":           _build_image_url(sub),
+        "image_filename":      (
+            sub.get("Evidence_Photo")
+            or sub.get("Click_a_Photo")
+        ),
+
+        # Legacy aliases kept for backwards compat with existing UI code
+        "reporter_name":       inspector_name,
+        "disaster_type":       violation_type,
+        "incident_date":       inspection_date,
+        "incident_time":       inspection_time,
+
+        # Raw payload (debugging)
+        "_raw": sub,
+    }
+
+
 # ============= Routes =============
+
+@router.get("/sync-status")
+async def get_sync_status_endpoint(
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Return last auto-sync result and whether auto-sync is enabled."""
+    from src.routes.kobo import _last_sync
+    return {
+        "auto_sync_enabled": True,
+        "interval_seconds": 120,
+        "last_sync_time": _last_sync.get("time"),
+        "last_created": _last_sync.get("created", 0),
+        "last_skipped": _last_sync.get("skipped", 0),
+        "last_error": _last_sync.get("error"),
+        "kobo_asset_uid": settings.KOBO_ASSET_UID,
+    }
+
+
+@router.get("/attachment-proxy")
+async def proxy_attachment(
+    url: str = Query(..., description="KoboToolbox attachment download URL"),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Proxy a KoboToolbox attachment with the API token so the browser can display it."""
+    from fastapi.responses import StreamingResponse
+    import re
+    if not re.match(r'https://(kf|kc|ee)\.kobotoolbox\.org/', url):
+        raise HTTPException(status_code=400, detail="Only KoboToolbox URLs are allowed")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers=KOBO_HEADERS)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail="Failed to fetch attachment")
+    content_type = resp.headers.get("content-type", "image/jpeg")
+    return StreamingResponse(
+        iter([resp.content]),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
 
 @router.get("/submissions")
 async def get_kobo_submissions(
@@ -68,8 +213,8 @@ async def get_kobo_submissions(
     current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Fetch all submissions from the KoboToolbox 'GEO AI Complaint system' form.
-    Returns raw KoboToolbox data enriched with parsed fields. Admin only.
+    Fetch all submissions from the KoboToolbox 'Illegal Shop Detection' form.
+    Returns enriched data with all parsed fields. Admin only.
     """
     if not settings.KOBO_API_TOKEN or not settings.KOBO_ASSET_UID:
         raise HTTPException(
@@ -98,38 +243,7 @@ async def get_kobo_submissions(
 
     data = response.json()
     results = data.get("results", [])
-
-    # Enrich each result with parsed fields for easier frontend consumption
-    enriched = []
-    for sub in results:
-        lat, lon = _parse_location(sub.get("Location"))
-        # Use _geolocation array as fallback
-        geo = sub.get("_geolocation", [None, None])
-        if lat is None and geo and len(geo) >= 2:
-            lat, lon = geo[0], geo[1]
-
-        enriched.append({
-            "id": sub.get("_id"),
-            "uuid": sub.get("_uuid"),
-            "submission_time": sub.get("_submission_time"),
-            "submitted_by": sub.get("_submitted_by"),
-            "reporter_name": sub.get("Name", ""),
-            "incident_date": sub.get("Enter_a_date"),
-            "incident_time": sub.get("Enter_a_time"),
-            "disaster_type": sub.get("Disaster_Name", "Unknown"),
-            "location_raw": sub.get("Location"),
-            "latitude": lat,
-            "longitude": lon,
-            "image_url": _build_image_url(sub),
-            "image_filename": sub.get("Click_a_Photo"),
-            "status": sub.get("_status"),
-            "validation_status": sub.get("_validation_status", {}),
-            "tags": sub.get("_tags", []),
-            "notes": sub.get("_notes", []),
-            "attachments": sub.get("_attachments", []),
-            # Raw data for any unmapped fields
-            "_raw": sub,
-        })
+    enriched = [_enrich_submission(sub) for sub in results]
 
     return {
         "count": data.get("count", len(results)),
@@ -145,10 +259,7 @@ async def get_kobo_form_definition(
     asset_uid: str,
     current_user: User = Depends(get_current_admin_user),
 ):
-    """
-    Get the form definition (survey structure) from KoboToolbox.
-    Admin only.
-    """
+    """Get the form definition (survey structure) from KoboToolbox. Admin only."""
     if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
@@ -165,7 +276,10 @@ async def get_kobo_form_definition(
             "content": data.get("content"),
         }
     else:
-        raise HTTPException(status_code=response.status_code, detail=f"Failed to get form: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Failed to get form: {response.text}"
+        )
 
 
 @router.delete("/data")
@@ -173,13 +287,10 @@ async def clear_kobo_data(
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Delete all complaints that were synced from KoboToolbox.
-    Admin only.
-    """
+    """Delete all complaints that were synced from KoboToolbox. Admin only."""
     deleted_count = db.query(Complaint).filter(Complaint.kobo_submission_id.isnot(None)).delete()
     db.commit()
-    return {"message": f"Deleted {deleted_count} Kobo-synced complaints"}
+    return {"message": f"Deleted {deleted_count} Kobo-synced shop reports"}
 
 
 @router.post("/sync")
@@ -189,6 +300,7 @@ async def sync_kobo_to_db(
 ):
     """
     Sync KoboToolbox submissions into the local complaints table.
+    Maps Illegal Shop Detection form fields to the Complaint model.
     Skips submissions already imported (matched by kobo_submission_id).
     Admin only.
     """
@@ -198,66 +310,86 @@ async def sync_kobo_to_db(
     url = _get_kobo_url(f"assets/{settings.KOBO_ASSET_UID}/data/")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(url, headers=KOBO_HEADERS, params={"limit": 10000, "format": "json"})
+        response = await client.get(
+            url, headers=KOBO_HEADERS, params={"limit": 10000, "format": "json"}
+        )
 
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"KoboToolbox API error: {response.status_code}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"KoboToolbox API error: {response.status_code}"
+        )
 
     submissions = response.json().get("results", [])
     created_count = 0
     skipped_count = 0
+
+    admin_user = db.query(User).filter(User.id == current_user.id).first()
 
     for sub in submissions:
         kobo_id = str(sub.get("_id", ""))
         if not kobo_id:
             continue
 
-        # Skip if already synced
-        existing = db.query(Complaint).filter(Complaint.kobo_submission_id == kobo_id).first()
+        # Skip already synced submissions
+        existing = db.query(Complaint).filter(
+            Complaint.kobo_submission_id == kobo_id
+        ).first()
         if existing:
             skipped_count += 1
             continue
 
-        lat, lon = _parse_location(sub.get("Location"))
-        geo = sub.get("_geolocation", [None, None])
-        if lat is None and geo and len(geo) >= 2:
-            lat, lon = geo[0], geo[1]
+        # Use the shared enrichment helper for consistent field parsing
+        enriched = _enrich_submission(sub)
 
-        # Parse incident date
+        lat = enriched["latitude"]
+        lon = enriched["longitude"]
+
+        # Parse inspection/incident date
         incident_date = None
-        date_str = sub.get("Enter_a_date")
+        date_str = enriched["inspection_date"]
         if date_str:
-            try:
-                incident_date = datetime.strptime(date_str, "%Y-%m-%d")
-            except ValueError:
-                pass
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+                try:
+                    incident_date = datetime.strptime(date_str, fmt)
+                    break
+                except ValueError:
+                    continue
 
-        # Get image URL from first attachment
-        image_url = _build_image_url(sub)
+        inspector_name  = enriched["inspector_name"] or "Unknown Inspector"
+        violation_type  = enriched["violation_type"] or "Unknown"
+        shop_name       = enriched["shop_name"] or "Unknown Shop"
+        municipality_zone = enriched["municipality_zone"] or ""
+        action_taken    = enriched["action_taken"] or ""
 
-        reporter_name = sub.get("Name", "Unknown Reporter")
-        disaster_type = sub.get("Disaster_Name", "Unknown")
-
-        # Ensure we have an admin user to attach the complaint to
-        admin_user = db.query(User).filter(User.id == current_user.id).first()
+        # Build a descriptive title and description
+        title = f"Illegal Shop: {shop_name} — {violation_type}"
+        description = (
+            f"Inspector: {inspector_name} (ID: {enriched['inspector_id']})\n"
+            f"Shop Name: {shop_name}\n"
+            f"Owner: {enriched['shop_owner_name']}\n"
+            f"Contact: {enriched['contact_number']}\n"
+            f"License No.: {enriched['license_number']}\n"
+            f"Municipality Zone: {municipality_zone}\n"
+            f"Violation: {violation_type}\n"
+            f"Details: {enriched['violation_description']}\n"
+            f"Action Taken: {action_taken}\n"
+            f"Submitted via KoboToolbox on {sub.get('_submission_time', 'unknown date')}"
+        )
 
         complaint = Complaint(
             user_id=admin_user.id,
-            title=f"KoboToolbox: {disaster_type} reported by {reporter_name}",
-            description=(
-                f"Reported by: {reporter_name}\n"
-                f"Submitted via KoboToolbox on {sub.get('_submission_time', 'unknown date')}\n"
-                f"Submitted by: {sub.get('_submitted_by', 'unknown')}"
-            ),
-            disaster_type=disaster_type,
+            title=title,
+            description=description,
+            disaster_type=violation_type,       # reused field → violation type
             latitude=lat,
             longitude=lon,
-            location_name=sub.get("Location"),
+            location_name=municipality_zone or enriched["location_raw"],
             incident_date=incident_date,
-            image_url=image_url,
+            image_url=enriched["image_url"],
             kobo_submission_id=kobo_id,
             status=ComplaintStatus.SUBMITTED,
-            severity="Medium",  # Default severity for KoboToolbox imports
+            severity="Medium",
         )
 
         db.add(complaint)
@@ -277,9 +409,7 @@ async def sync_kobo_to_db(
 async def list_kobo_forms(
     current_user: User = Depends(get_current_admin_user),
 ):
-    """
-    List all KoboToolbox forms/assets available for this API token. Admin only.
-    """
+    """List all KoboToolbox forms/assets available for this API token. Admin only."""
     if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
@@ -293,18 +423,21 @@ async def list_kobo_forms(
         )
 
     if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"KoboToolbox API error: {response.status_code}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"KoboToolbox API error: {response.status_code}"
+        )
 
     data = response.json()
     forms = [
         {
-            "uid": a.get("uid"),
-            "name": a.get("name"),
-            "asset_type": a.get("asset_type"),
+            "uid":               a.get("uid"),
+            "name":              a.get("name"),
+            "asset_type":        a.get("asset_type"),
             "deployment_status": a.get("deployment_status"),
-            "submission_count": a.get("deployment__submission_count", 0),
-            "last_submission": a.get("deployment__last_submission_time"),
-            "owner": a.get("owner_label"),
+            "submission_count":  a.get("deployment__submission_count", 0),
+            "last_submission":   a.get("deployment__last_submission_time"),
+            "owner":             a.get("owner_label"),
         }
         for a in data.get("results", [])
     ]
@@ -318,15 +451,11 @@ async def submit_to_kobo_form(
     submission_data: dict,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Submit data to a KoboToolbox form.
-    """
+    """Submit data to a KoboToolbox form."""
     if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
     url = _get_kobo_url(f"assets/{asset_uid}/submissions/")
-
-    # Add metadata
     submission_data["_submitted_by"] = current_user.username
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -335,7 +464,10 @@ async def submit_to_kobo_form(
     if response.status_code == 201:
         return response.json()
     else:
-        raise HTTPException(status_code=response.status_code, detail=f"Submission failed: {response.text}")
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Submission failed: {response.text}"
+        )
 
 
 @router.post("/forms")
@@ -351,7 +483,6 @@ async def create_kobo_form(
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
     url = _get_kobo_url("assets/")
-
     payload = {
         "asset_type": "survey",
         "name": form_data.get("name", "Untitled Form"),
@@ -364,11 +495,11 @@ async def create_kobo_form(
     if response.status_code in (200, 201):
         data = response.json()
         return {
-            "uid": data.get("uid"),
-            "name": data.get("name"),
-            "asset_type": data.get("asset_type"),
+            "uid":               data.get("uid"),
+            "name":              data.get("name"),
+            "asset_type":        data.get("asset_type"),
             "deployment_status": data.get("deployment_status"),
-            "url": data.get("url"),
+            "url":               data.get("url"),
         }
     else:
         raise HTTPException(
@@ -383,14 +514,11 @@ async def update_kobo_form(
     form_data: dict,
     current_user: User = Depends(get_current_admin_user),
 ):
-    """
-    Update an existing KoboToolbox form's name and/or content. Admin only.
-    """
+    """Update an existing KoboToolbox form's name and/or content. Admin only."""
     if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
     url = _get_kobo_url(f"assets/{asset_uid}/")
-
     payload = {}
     if "name" in form_data:
         payload["name"] = form_data["name"]
@@ -403,8 +531,8 @@ async def update_kobo_form(
     if response.status_code == 200:
         data = response.json()
         return {
-            "uid": data.get("uid"),
-            "name": data.get("name"),
+            "uid":     data.get("uid"),
+            "name":    data.get("name"),
             "content": data.get("content"),
         }
     else:
@@ -419,9 +547,7 @@ async def delete_kobo_form(
     asset_uid: str,
     current_user: User = Depends(get_current_admin_user),
 ):
-    """
-    Delete a KoboToolbox form/asset permanently. Admin only.
-    """
+    """Delete a KoboToolbox form/asset permanently. Admin only."""
     if not settings.KOBO_API_TOKEN:
         raise HTTPException(status_code=503, detail="KoboToolbox not configured")
 
@@ -437,4 +563,3 @@ async def delete_kobo_form(
             status_code=response.status_code,
             detail=f"Failed to delete form: {response.text}"
         )
-

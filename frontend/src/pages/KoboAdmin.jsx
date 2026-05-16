@@ -8,7 +8,8 @@ import api from '../services/api';
 import { useAuthStore } from '../store/store';
 import { toast } from 'react-toastify';
 import {
-  FiRefreshCw, FiTrash2, FiDownload, FiArrowLeft, FiDatabase, FiLoader,
+  FiRefreshCw, FiTrash2, FiArrowLeft, FiDatabase, FiLoader,
+  FiCheckCircle, FiClock, FiZap,
 } from 'react-icons/fi';
 
 export default function KoboAdmin() {
@@ -17,14 +18,31 @@ export default function KoboAdmin() {
   const [submissions, setSubmissions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
 
   useEffect(() => {
     if (user?.role && !['admin', 'super_admin'].includes(user.role)) {
       navigate('/complaints');
       return;
     }
-    if (user) loadSubmissions();
+    if (user) {
+      loadSubmissions();
+      fetchSyncStatus();
+    }
   }, [user]);
+
+  // Poll sync status every 30s so the UI reflects auto-sync updates
+  useEffect(() => {
+    const interval = setInterval(fetchSyncStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchSyncStatus = async () => {
+    try {
+      const res = await api.get('/kobo/sync-status');
+      setSyncStatus(res.data);
+    } catch (_) {}
+  };
 
   const loadSubmissions = async () => {
     setIsLoading(true);
@@ -70,6 +88,26 @@ export default function KoboAdmin() {
 
   return (
     <div className="space-y-6">
+      {/* Auto-Sync Status Banner */}
+      <div className="flex items-center gap-3 rounded-2xl border border-green-200 bg-green-50 px-5 py-3">
+        <FiZap size={18} className="text-green-600 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-green-800">
+            Auto-Sync is Active — New submissions appear automatically every 2 minutes
+          </p>
+          {syncStatus?.last_sync_time ? (
+            <p className="text-xs text-green-600 mt-0.5">
+              <FiClock size={11} className="inline mr-1" />
+              Last synced: {new Date(syncStatus.last_sync_time).toLocaleTimeString()} &nbsp;•&nbsp;
+              {syncStatus.last_created} new record(s) imported
+            </p>
+          ) : (
+            <p className="text-xs text-green-600 mt-0.5">Waiting for first auto-sync cycle…</p>
+          )}
+        </div>
+        <FiCheckCircle size={20} className="text-green-500 flex-shrink-0" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -81,8 +119,8 @@ export default function KoboAdmin() {
             Back to Admin
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">KoboToolbox Data</h1>
-            <p className="text-gray-600 mt-1">Manage data synchronization</p>
+            <h1 className="text-3xl font-bold text-gray-900">KoboToolbox Sync</h1>
+            <p className="text-gray-600 mt-1">Shop inspection data synchronization</p>
           </div>
         </div>
       </div>
@@ -116,7 +154,7 @@ export default function KoboAdmin() {
           </button>
         </div>
         <p className="text-sm text-gray-600 mt-2">
-          Sync pulls new submissions from KoboToolbox. Clear removes all locally synced complaints.
+          Sync pulls new shop inspection submissions from KoboToolbox. Clear removes all locally synced reports.
         </p>
       </div>
 
@@ -137,16 +175,19 @@ export default function KoboAdmin() {
               <div key={sub.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h4 className="font-semibold">{sub.reporter_name || 'Anonymous'}</h4>
-                    <p className="text-sm text-gray-600">
-                      {sub.disaster_type} • {new Date(sub.incident_date).toLocaleDateString()}
+                  <h4 className="font-semibold">{sub.inspector_name || sub.reporter_name || 'Anonymous'}</h4>
+                  <p className="text-sm text-gray-600">
+                    {sub.violation_type || sub.disaster_type || 'Unknown Violation'} • {sub.shop_name || 'Unknown Shop'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Zone: {sub.municipality_zone || 'N/A'} • {new Date(sub.submission_time).toLocaleDateString()}
+                  </p>
+                  {sub.latitude && sub.longitude && (
+                    <p className="text-xs text-gray-500">
+                      📍 {sub.latitude.toFixed(4)}, {sub.longitude.toFixed(4)}
                     </p>
-                    {sub.latitude && sub.longitude && (
-                      <p className="text-xs text-gray-500">
-                        📍 {sub.latitude.toFixed(4)}, {sub.longitude.toFixed(4)}
-                      </p>
-                    )}
-                  </div>
+                  )}
+                </div>
                   <div className="text-right text-sm text-gray-500">
                     {new Date(sub.submission_time).toLocaleString()}
                   </div>

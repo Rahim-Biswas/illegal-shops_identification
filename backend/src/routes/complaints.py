@@ -148,7 +148,9 @@ def get_user_map_data(
             disaster_type=c.disaster_type,
             status=c.status,
             severity=c.severity,
-            created_at=c.created_at
+            created_at=c.created_at,
+            image_url=c.image_url,
+            location_name=c.location_name,
         )
         for c in complaints
     ]
@@ -243,7 +245,9 @@ def get_map_data(
             disaster_type=c.disaster_type,
             status=c.status,
             severity=c.severity,
-            created_at=c.created_at
+            created_at=c.created_at,
+            image_url=c.image_url,
+            location_name=c.location_name,
         )
         for c in complaints
     ]

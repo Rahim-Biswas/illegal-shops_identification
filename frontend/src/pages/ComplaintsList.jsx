@@ -125,7 +125,7 @@ export default function ComplaintsList() {
           <div className="flex justify-center py-8">
             <div className="animate-spin">Loading...</div>
           </div>
-        ) : complaints.length === 0 ? (
+        ) : reports.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-4">No reports found</p>
             <button
@@ -212,7 +212,7 @@ export default function ComplaintsList() {
         )}
 
         {/* Pagination */}
-        {complaints.length > 0 && (
+        {reports.length > 0 && (
           <div className="border-t border-gray-200 mt-4 pt-4 flex items-center justify-between">
             <button
               onClick={() => setPage(Math.max(0, page - 1))}

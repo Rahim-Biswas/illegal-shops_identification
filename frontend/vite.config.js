@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    // Add this line to allow your temporary Cloudflare tunnel URLs
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

@@ -216,6 +216,8 @@ class MapDataPoint(BaseModel):
     status: ComplaintStatus
     severity: Optional[str]
     created_at: datetime
+    image_url: Optional[str] = None
+    location_name: Optional[str] = None
 
 
 # ============= Download Log Schemas =============

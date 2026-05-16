@@ -15,8 +15,8 @@ import { getInitials, getRoleLabel } from '../utils/helpers';
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuthStore();
 
   const handleLogout = () => {
@@ -28,19 +28,19 @@ export default function Layout({ children }) {
 
   // Navigation items — role-aware RBAC navigation
   const navItems = [
-    { icon: FiHome,        label: 'Dashboard',      path: '/dashboard',   allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
-    { icon: FiFileText,    label: 'Shop Reports',   path: '/complaints',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
-    { icon: FiMap,         label: 'Map View',       path: '/map',         allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
-    { icon: FiGrid,        label: 'Case Board',     path: '/tasks',       allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
-    { icon: FiCalendar,    label: 'Scheduling',     path: '/scheduling',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
-    { icon: FiBarChart2,   label: 'Analytics',      path: '/reports',     allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin'] },
-    { icon: FiDatabase,    label: 'Integrations',   path: '/integrations', allowedRoles: ['super_admin', 'municipality_admin', 'operator', 'admin'] },
-    { icon: FiLayers,      label: 'Building Explorer', path: '/indoor-map',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin'] },
+    { icon: FiHome, label: 'Dashboard', path: '/dashboard', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiFileText, label: 'Shop Reports', path: '/complaints', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiMap, label: 'Map View', path: '/map', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiGrid, label: 'Case Board', path: '/tasks', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
+    { icon: FiCalendar, label: 'Scheduling', path: '/scheduling', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
+    { icon: FiBarChart2, label: 'Analytics', path: '/reports', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin'] },
+    { icon: FiDatabase, label: 'Integrations', path: '/integrations', allowedRoles: ['super_admin', 'municipality_admin', 'operator', 'admin'] },
+    { icon: FiLayers, label: 'Building Explorer', path: '/indoor-map', allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin'] },
     // ── Admin-only section ──
-    { icon: FiGrid,        label: 'Admin Panel',    path: '/admin',       allowedRoles: ['super_admin', 'admin'] },
-    { icon: FiDatabase,    label: 'Kobo Data',      path: '/admin/kobo',  allowedRoles: ['super_admin', 'admin'] },
-    { icon: FiUsers,       label: 'Manage Users',   path: '/admin/users', allowedRoles: ['super_admin', 'admin'] },
-    { icon: FiSettings,    label: 'Form Builder',   path: '/admin/forms', allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiGrid, label: 'Admin Panel', path: '/admin', allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiDatabase, label: 'Kobo Data', path: '/admin/kobo', allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiUsers, label: 'Manage Users', path: '/admin/users', allowedRoles: ['super_admin', 'admin'] },
+    { icon: FiSettings, label: 'Form Builder', path: '/admin/forms', allowedRoles: ['super_admin', 'admin'] },
   ].filter((item) => item.allowedRoles.includes(user?.role));
 
   const isActive = (path) =>
@@ -51,9 +51,8 @@ export default function Layout({ children }) {
 
       {/* ======= Sidebar ======= */}
       <aside
-        className={`${
-          sidebarOpen ? 'w-60' : 'w-16'
-        } bg-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col shadow-xl`}
+        className={`${sidebarOpen ? 'w-60' : 'w-16'
+          } bg-slate-900 text-white transition-all duration-300 ease-in-out flex flex-col shadow-xl`}
       >
         {/* Sidebar Header — logo + collapse toggle */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700">
@@ -66,7 +65,7 @@ export default function Layout({ children }) {
                   className="w-full h-full object-contain"
                 />
               </div>
-              <span className="font-bold text-sm text-white leading-tight">ShopGuard AI</span>
+              <span className="font-bold text-sm text-white leading-tight">Ayn</span>
             </div>
           )}
           <button
@@ -86,11 +85,10 @@ export default function Layout({ children }) {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
-                  active
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${active
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                     : 'text-slate-400 hover:bg-slate-700 hover:text-white'
-                }`}
+                  }`}
                 title={!sidebarOpen ? item.label : undefined}
               >
                 <item.icon size={18} className="flex-shrink-0" />
@@ -143,7 +141,7 @@ export default function Layout({ children }) {
 
       {/* ======= Main Content (no header) ======= */}
       <main className="flex-1 overflow-auto bg-gray-50">
-        <div className="p-6">{children}</div>
+        <div className={location.pathname === '/map' ? 'h-full' : 'p-6'}>{children}</div>
       </main>
     </div>
   );
