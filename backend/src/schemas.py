@@ -9,6 +9,12 @@ from enum import Enum
 
 class UserRole(str, Enum):
     """User roles."""
+    SUPER_ADMIN = "super_admin"
+    MUNICIPALITY_ADMIN = "municipality_admin"
+    SUPERVISOR = "supervisor"
+    FIELD_INSPECTOR = "field_inspector"
+    AUDITOR = "auditor"
+    OPERATOR = "operator"
     ADMIN = "admin"
     USER = "user"
 

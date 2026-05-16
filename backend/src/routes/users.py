@@ -1,7 +1,9 @@
 """
 User management routes.
 """
+# pyrefly: ignore [missing-import]
 from fastapi import APIRouter, Depends, HTTPException, status
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from src.database import get_db
 from src.models import User, UserRole

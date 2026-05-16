@@ -1,5 +1,5 @@
 /**
- * Complaint detail page
+ * Shop violation report detail page
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -32,7 +32,7 @@ export default function ComplaintDetail() {
       setComplaint(complaintRes.data);
       setComments(commentsRes.data);
     } catch (error) {
-      toast.error('Failed to load complaint details');
+      toast.error('Failed to load report details');
       navigate('/complaints');
     } finally {
       setIsLoading(false);
@@ -69,9 +69,9 @@ export default function ComplaintDetail() {
   if (!complaint) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500 mb-4">Complaint not found</p>
+        <p className="text-gray-500 mb-4">Report not found</p>
         <button onClick={() => navigate('/complaints')} className="btn-primary">
-          Back to Complaints
+          Back to Reports
         </button>
       </div>
     );
@@ -86,7 +86,7 @@ export default function ComplaintDetail() {
           className="flex items-center text-blue-600 hover:text-blue-700"
         >
           <FiArrowLeft size={20} className="mr-2" />
-          Back to Complaints
+          Back to Reports
         </button>
         <button
           onClick={() => navigate(`/complaints/${id}/edit`)}
@@ -123,7 +123,7 @@ export default function ComplaintDetail() {
             <h3 className="font-semibold text-gray-900 mb-3">Basic Information</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <dt className="text-gray-600">Disaster Type:</dt>
+                <dt className="text-gray-600">Shop / Violation Type:</dt>
                 <dd className="font-medium">{complaint.disaster_type}</dd>
               </div>
               <div className="flex justify-between">
@@ -176,7 +176,7 @@ export default function ComplaintDetail() {
 
         {complaint.damage_description && (
           <div className="border-t border-gray-200 pt-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Damage Description</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Evidence / Damage Notes</h3>
             <p className="text-gray-600 whitespace-pre-wrap">{complaint.damage_description}</p>
           </div>
         )}

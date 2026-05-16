@@ -104,7 +104,7 @@ export default function AdminDashboard() {
         <div className="card bg-gradient-to-br from-blue-50 to-blue-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm">Total Complaints</p>
+              <p className="text-gray-600 text-sm">Total Reports</p>
               <p className="text-3xl font-bold text-gray-900">
                 {statistics.total_complaints}
               </p>
@@ -154,7 +154,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Status Distribution */}
         <div className="card">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Complaints by Status</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Reports by Status</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -168,7 +168,7 @@ export default function AdminDashboard() {
 
         {/* Disaster Type Distribution */}
         <div className="card">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Complaints by Type</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Reports by Shop Type</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={disasterData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -189,8 +189,8 @@ export default function AdminDashboard() {
             onClick={() => navigate('/complaints')}
             className="btn-primary text-left"
           >
-            <div className="font-semibold">View All Complaints</div>
-            <div className="text-sm opacity-75">Manage all submitted complaints</div>
+            <div className="font-semibold">View All Reports</div>
+            <div className="text-sm opacity-75">Manage all submitted shop reports</div>
           </button>
           <button
             onClick={() => navigate('/admin/users')}
@@ -204,7 +204,7 @@ export default function AdminDashboard() {
             className="btn-success text-left"
           >
             <div className="font-semibold">View Map</div>
-            <div className="text-sm opacity-75">Visualize complaints on map</div>
+            <div className="text-sm opacity-75">Visualize shop violations on map</div>
           </button>
           <button
             onClick={() => navigate('/admin/kobo')}

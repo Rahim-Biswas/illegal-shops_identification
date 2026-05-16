@@ -14,8 +14,8 @@ export default function IndoorMap() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Indoor Mapping</h1>
-          <p className="text-gray-500 mt-2 max-w-2xl">Explore multi-tenant commercial sites, floor-aware shop units, and violation history in dense trade centers.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Building Explorer</h1>
+          <p className="text-gray-500 mt-2 max-w-2xl">Explore multi-tenant commercial buildings, floor-aware shop units, and violation history in dense trade centers.</p>
         </div>
         <button className="rounded-3xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">View Floor Plan</button>
       </div>

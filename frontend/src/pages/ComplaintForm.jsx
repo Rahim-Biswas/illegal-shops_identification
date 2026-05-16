@@ -1,5 +1,5 @@
 /**
- * Create/Edit complaint page
+ * Create/Edit shop violation report page
  * Supports both static and dynamic forms from KoboToolbox
  */
 import { useState, useEffect } from 'react';
@@ -8,7 +8,7 @@ import { complaintApi, koboApi } from '../services/api';
 import { toast } from 'react-toastify';
 import { FiMapPin, FiLoader } from 'react-icons/fi';
 
-const DISASTER_TYPES = ['Landslide', 'Flood', 'Earthquake', 'Fire', 'Storm', 'Other'];
+const SHOP_TYPES = ['Restaurant', 'Retail', 'Warehouse', 'Market Stall', 'Kiosk', 'Service Shop', 'Other'];
 const SEVERITY_LEVELS = ['Low', 'Medium', 'High', 'Critical'];
 
 export default function ComplaintForm() {
@@ -81,7 +81,7 @@ export default function ComplaintForm() {
         });
       }
     } catch (error) {
-      toast.error('Failed to load complaint');
+      toast.error('Failed to load report');
       navigate('/complaints');
     } finally {
       setIsLoading(false);
@@ -231,7 +231,7 @@ export default function ComplaintForm() {
         // Submit to Kobo
         const complaintFormUid = import.meta.env.VITE_KOBO_COMPLAINT_FORM_UID;
         await koboApi.submitToForm(complaintFormUid, dynamicData);
-        toast.success('Complaint submitted to KoboToolbox');
+        toast.success('Report submitted to KoboToolbox');
       } else {
         // Submit to local backend
         if (!formData.title || !formData.description || !formData.disaster_type) {
@@ -246,7 +246,7 @@ export default function ComplaintForm() {
             latitude: formData.latitude ? parseFloat(formData.latitude) : null,
             longitude: formData.longitude ? parseFloat(formData.longitude) : null,
           });
-          toast.success('Complaint updated successfully');
+          toast.success('Report updated successfully');
         } else {
           await complaintApi.createComplaint({
             ...formData,
@@ -254,12 +254,12 @@ export default function ComplaintForm() {
             latitude: formData.latitude ? parseFloat(formData.latitude) : null,
             longitude: formData.longitude ? parseFloat(formData.longitude) : null,
           });
-          toast.success('Complaint submitted successfully');
+          toast.success('Report submitted successfully');
         }
         navigate('/complaints');
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to save complaint');
+      toast.error(error.response?.data?.detail || 'Failed to save report');
     } finally {
       setIsLoading(false);
     }
@@ -277,10 +277,10 @@ export default function ComplaintForm() {
     <div className="max-w-2xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">
-          {isEditing ? 'Edit Complaint' : 'Submit Complaint'}
+          {isEditing ? 'Edit Report' : 'Submit Report'}
         </h1>
         <p className="text-gray-600 mt-1">
-          {isDynamic ? 'Using dynamic form from KoboToolbox' : 'Report a disaster or emergency incident'}
+          {isDynamic ? 'Using dynamic form from KoboToolbox' : 'Report an illegal shop or licensing violation'}
         </p>
       </div>
 
@@ -302,7 +302,7 @@ export default function ComplaintForm() {
                 value={formData.title}
                 onChange={handleChange}
                 className="input-field"
-                placeholder="Brief title for the complaint"
+                placeholder="Brief title for the report"
               />
             </div>
 
@@ -321,11 +321,11 @@ export default function ComplaintForm() {
               />
             </div>
 
-            {/* Disaster Type and Severity */}
+            {/* Shop / Violation Type and Severity */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="form-label">
-                  Disaster Type *
+                  Shop / Violation Type *
                 </label>
                 <select
                   name="disaster_type"
@@ -334,7 +334,7 @@ export default function ComplaintForm() {
                   className="input-field"
                 >
                   <option value="">Select a type</option>
-                  {DISASTER_TYPES.map((type) => (
+                  {SHOP_TYPES.map((type) => (
                     <option key={type} value={type}>
                       {type}
                     </option>
@@ -481,7 +481,7 @@ export default function ComplaintForm() {
               {isEditing ? 'Updating...' : 'Submitting...'}
             </>
           ) : (
-            isEditing ? 'Update Complaint' : 'Submit Complaint'
+            isEditing ? 'Update Report' : 'Submit Report'
           )}
         </button>
       </form>

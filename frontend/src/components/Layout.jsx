@@ -29,13 +29,13 @@ export default function Layout({ children }) {
   // Navigation items — role-aware RBAC navigation
   const navItems = [
     { icon: FiHome,        label: 'Dashboard',      path: '/dashboard',   allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
-    { icon: FiFileText,    label: 'Complaints',     path: '/complaints',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
+    { icon: FiFileText,    label: 'Shop Reports',   path: '/complaints',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
     { icon: FiMap,         label: 'Map View',       path: '/map',         allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'auditor', 'operator', 'admin', 'user'] },
     { icon: FiGrid,        label: 'Case Board',     path: '/tasks',       allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
     { icon: FiCalendar,    label: 'Scheduling',     path: '/scheduling',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'admin'] },
-    { icon: FiBarChart2,   label: 'Reports',        path: '/reports',     allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin'] },
+    { icon: FiBarChart2,   label: 'Analytics',      path: '/reports',     allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'auditor', 'operator', 'admin'] },
     { icon: FiDatabase,    label: 'Integrations',   path: '/integrations', allowedRoles: ['super_admin', 'municipality_admin', 'operator', 'admin'] },
-    { icon: FiLayers,      label: 'Indoor Map',     path: '/indoor-map',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin'] },
+    { icon: FiLayers,      label: 'Building Explorer', path: '/indoor-map',  allowedRoles: ['super_admin', 'municipality_admin', 'supervisor', 'field_inspector', 'admin'] },
     // ── Admin-only section ──
     { icon: FiGrid,        label: 'Admin Panel',    path: '/admin',       allowedRoles: ['super_admin', 'admin'] },
     { icon: FiDatabase,    label: 'Kobo Data',      path: '/admin/kobo',  allowedRoles: ['super_admin', 'admin'] },
@@ -66,7 +66,7 @@ export default function Layout({ children }) {
                   className="w-full h-full object-contain"
                 />
               </div>
-              <span className="font-bold text-sm text-white leading-tight">Complaint System</span>
+              <span className="font-bold text-sm text-white leading-tight">ShopGuard AI</span>
             </div>
           )}
           <button
