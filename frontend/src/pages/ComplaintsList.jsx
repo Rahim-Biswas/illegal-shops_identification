@@ -64,7 +64,7 @@ export default function ComplaintsList() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Shop Reports</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Field Survey Data</h1>
           <p className="text-gray-600 mt-1">Manage and track all illegal shop detection reports</p>
         </div>
         <button

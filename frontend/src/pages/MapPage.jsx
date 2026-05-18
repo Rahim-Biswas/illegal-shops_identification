@@ -39,6 +39,13 @@ const MLY_TOKEN = import.meta.env.VITE_MAPILLARY_ACCESS_TOKEN || '';
 // ── Basemap presets ──────────────────────────────────────────────────────────
 const BASEMAPS = [
   {
+    id: 'dark',
+    label: 'Dark',
+    url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attr: '© CartoDB',
+    preview: '#1a1a2e',
+  },
+  {
     id: 'street',
     label: 'Street',
     url: 'https://{a-c}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -51,14 +58,7 @@ const BASEMAPS = [
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attr: '© Esri',
     preview: '#2d4a1e',
-  },
-  {
-    id: 'dark',
-    label: 'Dark',
-    url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attr: '© CartoDB',
-    preview: '#1a1a2e',
-  },
+  }
 ];
 
 
@@ -322,8 +322,8 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo }) {
         onClick={onToggleOpen}
         title="Layer Manager"
         className={`w-8 h-8 rounded shadow-lg flex items-center justify-center text-sm font-bold transition-colors border ${open
-            ? 'bg-blue-600 border-blue-500 text-white'
-            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+          ? 'bg-blue-600 border-blue-500 text-white'
+          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
           }`}
       >
         <FiLayers size={15} />
@@ -448,7 +448,7 @@ export default function MapPage() {
   const [mlyError, setMlyError] = useState(false);
   const [svExpanded, setSvExpanded] = useState(false);
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
-  const [basemapId, setBasemapId] = useState('street');
+  const [basemapId, setBasemapId] = useState('dark');
   const [basemapOpen, setBasemapOpen] = useState(false);
   const [mlyCoverageClick, setMlyCoverageClick] = useState(null);
   const [layerVis, setLayerVis] = useState({
@@ -498,7 +498,7 @@ export default function MapPage() {
 
     const baseTileLayer = new TileLayer({
       source: new XYZ({
-        url: 'https://{a-c}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
         attributions: '© CartoDB',
       }),
       zIndex: 0,
@@ -822,8 +822,8 @@ export default function MapPage() {
           onClick={() => setBasemapOpen(v => !v)}
           title="Change basemap"
           className={`w-8 h-8 rounded shadow-lg flex items-center justify-center transition-colors border ${basemapOpen
-              ? 'bg-blue-600 border-blue-500 text-white'
-              : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
+            ? 'bg-blue-600 border-blue-500 text-white'
+            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
             }`}
         >
           <FiGlobe size={15} />

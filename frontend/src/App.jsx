@@ -24,12 +24,15 @@ import Scheduling from './pages/Scheduling';
 import Reports from './pages/Reports';
 import IntegrationStatus from './pages/IntegrationStatus';
 import IndoorMap from './pages/IndoorMap';
-import AdminDashboard from './pages/AdminDashboard';
+
 import AdminUsers from './pages/AdminUsers';
 import Profile from './pages/Profile';
 import KoboDataPage from './pages/KoboDataPage';
 import FormBuilder from './pages/FormBuilder';
 import KoboAdmin from './pages/KoboAdmin';
+import DataHouse from './pages/DataHouse';
+import StreetExplorer from './pages/StreetExplorer';
+import AiLabPage from './pages/AiLabPage';
 
 // --- Protected Route: requires a valid token in the store ---
 // Store is hydrated synchronously from localStorage, so this check
@@ -91,6 +94,9 @@ export default function App() {
                     <Route path="/complaints/:id/edit" element={<ComplaintForm />} />
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/data-house" element={<DataHouse />} />
+                    <Route path="/street-data" element={<StreetExplorer />} />
+                    <Route path="/ai-lab" element={<AiLabPage />} />
                     <Route
                       path="/tasks"
                       element={
@@ -141,11 +147,7 @@ export default function App() {
                     />
                     <Route
                       path="/admin"
-                      element={
-                        <AdminRoute>
-                          <AdminDashboard />
-                        </AdminRoute>
-                      }
+                      element={<Navigate to="/dashboard" replace />}
                     />
                     <Route
                       path="/admin/users"
