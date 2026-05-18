@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     KOBO_ASSET_UID: Optional[str] = None
     KOBO_COMPLAINT_FORM_UID: Optional[str] = None  # UID of form to use for complaint submissions
 
+    # --- MinIO ---
+    MINIO_URL: str = "http://localhost:9000/"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET: str = "madinah-street-data"
+
     # --- Admin Seed ---
     ADMIN_EMAIL: str = "admin@geoai.com"
     ADMIN_USERNAME: str = "admin"
@@ -55,6 +61,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()

@@ -97,12 +97,15 @@ const STATUS_COLORS = {
 };
 
 const ZONE_LABELS = {
-  old_city: 'Old City',
-  al_haram: 'Al Haram',
-  quba: 'Quba',
-  jabal_uhud: 'Jabal Uhud',
-  aziziyah: 'Aziziyah',
-  other: 'Other',
+  al_haram:    'Al Haram',
+  quba:        'Quba',
+  aziziyah:   'Aziziyah',
+  jabal_uhud:  'Jabal Uhud',
+  al_manakhah: 'Al Manakhah',
+  al_awali:    'Al Awali',
+  bani_haritha:'Bani Haritha',
+  al_aqiq:     'Al Aqiq',
+  other:       'Other',
 };
 
 function violationColor(type) {

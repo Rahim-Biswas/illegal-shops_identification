@@ -101,4 +101,71 @@ export const koboApi = {
   submitToForm: (assetUid, data) => api.post(`/kobo/forms/${assetUid}/submit`, data),
 };
 
+// ============= MinIO Street-Data APIs =============
+
+export const minioApi = {
+  /** Full recursive tree */
+  listAllFolders: () => api.get('/minio/folders'),
+
+  /** Subtree for a specific folder */
+  listFolder: (folder) => api.get(`/minio/folders/${folder}`),
+
+  /** Upload files (FormData with `files` field) into a folder path */
+  uploadFiles: (folderPath, formData) =>
+    api.post(`/minio/folders/${folderPath}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+
+  /** Delete entire folder prefix OR single file key */
+  deletePath: (path) => api.delete(`/minio/folders/${path}`),
+
+  /** Create a virtual folder (places a .keep placeholder) */
+  createFolder: (path) => api.post('/minio/create-folder', { path }),
+
+  /**
+   * Returns the URL to stream/preview a file through the FastAPI proxy.
+   * Uses the same base URL as all other API calls.
+   */
+  getStreamUrl: (fullKey) => {
+    const base = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api')
+      .replace(/\/+$/, '');
+    return `${base}/minio/stream/${fullKey}`;
+  },
+};
+
+// ============= YOLO Detection APIs =============
+
+export const yoloApi = {
+  /** Service health / loaded model info */
+  status: () => api.get('/yolo/status'),
+
+  /**
+   * Submit a detection job.
+   * @param {string[]} fileKeys  – MinIO object keys
+   * @param {number}   conf
+   * @param {number}   iou
+   */
+  detect: (fileKeys, conf = 0.5, iou = 0.45) =>
+    api.post('/yolo/detect', { file_keys: fileKeys, conf, iou }),
+
+  /** Poll a running job */
+  pollJob: (jobId) => api.get(`/yolo/result/${jobId}`),
+
+  /** List all recent jobs */
+  listJobs: () => api.get('/yolo/jobs'),
+
+  /** Delete / clear a job */
+  deleteJob: (jobId) => api.delete(`/yolo/jobs/${jobId}`),
+
+  /**
+   * Build the URL to stream an annotated result image.
+   * @param {string} jobId
+   * @param {string} filename – original filename of the result
+   */
+  getResultImageUrl: (jobId, filename) => {
+    const base = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/+$/, '');
+    return `${base}/yolo/stream-result/${jobId}/${filename}`;
+  },
+};
+
 export default api;

@@ -11,6 +11,8 @@ from src.config import settings
 from src.database import init_db, get_db
 from src.routes import auth, users, complaints
 from src.routes import kobo
+from src.routes import minio_routes
+from src.routes import yolo_routes
 import httpx
 from datetime import datetime
 
@@ -207,6 +209,8 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(complaints.router)
 app.include_router(kobo.router)
+app.include_router(minio_routes.router)
+app.include_router(yolo_routes.router)
 
 
 # ============= Error Handlers =============

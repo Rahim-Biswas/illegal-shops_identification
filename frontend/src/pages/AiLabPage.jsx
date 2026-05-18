@@ -7,8 +7,9 @@ import { useState, useEffect } from 'react';
 import {
   FiCpu, FiCamera, FiSearch, FiDatabase, FiTag, FiExternalLink,
   FiCheckCircle, FiClock, FiAlertCircle, FiPlay,
-  FiZap, FiEye, FiMapPin, FiRefreshCw,
+  FiZap, FiEye, FiMapPin, FiRefreshCw, FiImage
 } from 'react-icons/fi';
+import YoloDetectionModal from '../components/YoloDetectionModal';
 
 // ─── Pipeline stages ──────────────────────────────────────────────────────────
 const PIPELINE = [
@@ -128,6 +129,7 @@ function PipelineStep({ stage, index, total }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AiLabPage() {
   const [progress, setProgress] = useState(58);
+  const [showYoloModal, setShowYoloModal] = useState(false);
 
   // Simulate live progress ticking
   useEffect(() => {
@@ -161,15 +163,25 @@ export default function AiLabPage() {
         </div>
 
         {/* Primary CTA — existing hyperlink kept as required */}
-        <a
-          href="https://aces.logicity.in/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg hover:opacity-90 transition-opacity flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}
-        >
-          <FiExternalLink size={15} /> Open AI Lab Platform
-        </a>
+        <div className="flex flex-wrap items-center gap-3 justify-end">
+          <button
+            onClick={() => setShowYoloModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg hover:opacity-90 transition-opacity flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg,#3b82f6,#2dd4bf)' }}
+          >
+            <FiSearch size={15} /> Open YOLO Detection
+          </button>
+
+          <a
+            href="https://aces.logicity.in/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg hover:opacity-90 transition-opacity flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg,#6366f1,#a855f7)' }}
+          >
+            <FiExternalLink size={15} /> Open AI Lab Platform
+          </a>
+        </div>
       </div>
 
       {/* ── Under-development banner ── */}
@@ -316,6 +328,9 @@ export default function AiLabPage() {
         </div>
       </div>
 
+      {showYoloModal && (
+        <YoloDetectionModal onClose={() => setShowYoloModal(false)} />
+      )}
     </div>
   );
 }
