@@ -31,6 +31,8 @@ backend/.env
 backend/venv/
 backend/.venv/
 backend/env/
+backend/__pycache__/
+backend/.pytest_cache/
 
 # =========================
 
@@ -59,3 +61,5 @@ Thumbs.db
 
 # =========================
 
+__pycache__/
+*.pyc
