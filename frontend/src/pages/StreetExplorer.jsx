@@ -53,6 +53,23 @@ function prettyName(n='') {
 }
 function palette(i){ return PALETTE[i%PALETTE.length]; }
 
+export const COLLECTORS = [
+  'أحمد بن خالد الحربي (Ahmed Al-Harbi)',
+  'فيصل بن نايف العتيبي (Faisal Al-Otaibi)',
+  'عبد الله بن علي الغامدي (Abdullah Al-Ghamdi)',
+  'ياسر بن محمد الشمراني (Yasser Al-Shamrani)',
+  'رائد بن سليمان المطيري (Raed Al-Mutairi)',
+];
+
+export function getFolderCollector(path = '') {
+  let hash = 0;
+  for (let i = 0; i < path.length; i++) {
+    hash = path.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % COLLECTORS.length;
+  return COLLECTORS[idx];
+}
+
 // ─── Tiny action button ───────────────────────────────────────────────────────
 function ActionBtn({ icon, label, onClick, danger }) {
   return (
@@ -130,7 +147,10 @@ function FolderNode({ node, depth, colorIndex, onAction }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-900 text-sm">{prettyName(node.name)}</p>
-            <p className="text-xs text-gray-400 font-mono mt-0.5">{node.path}</p>
+            <p className="text-[11px] text-gray-400 font-mono mt-0.5">{node.path}</p>
+            <p className="text-[11px] text-blue-600 font-medium mt-1">
+              Collector: <span className="text-gray-700 font-semibold">{getFolderCollector(node.path)}</span>
+            </p>
           </div>
           <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e=>e.stopPropagation()}>
             <ActionBtn icon={<FiUploadCloud size={14}/>} label="Upload files here"    onClick={()=>act('upload-files')} />
@@ -238,6 +258,7 @@ export default function StreetExplorer() {
   const [error,        setError]        = useState(null);
   const [lastRefresh,  setLastRefresh]  = useState(null);
   const [search,       setSearch]       = useState('');
+  const [selectedCollector, setSelectedCollector] = useState('');
 
   // modal state — one object controls all modals
   const [modal, setModal] = useState(null);
@@ -276,10 +297,15 @@ export default function StreetExplorer() {
   function afterMutation()   { fetchData(false); }
 
   // ── filter ─────────────────────────────────────────────────────────────────
-  const filtered = folders.filter(f=>{
-    if (!search) return true;
-    const q=search.toLowerCase();
-    return f.name.toLowerCase().includes(q)||f.path.toLowerCase().includes(q);
+  const filtered = folders.filter(f => {
+    const collector = getFolderCollector(f.path);
+    const matchesCollector = !selectedCollector || collector === selectedCollector;
+    
+    if (!search) return matchesCollector;
+    const q = search.toLowerCase();
+    const matchesSearch = f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q);
+    
+    return matchesSearch && matchesCollector;
   });
 
   return (
@@ -359,14 +385,49 @@ export default function StreetExplorer() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center gap-3 shadow-sm">
         <div className="relative flex-1">
           <FiSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search folders…"
-            className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"/>
+          <input 
+            value={search} 
+            onChange={e=>setSearch(e.target.value)} 
+            placeholder="Search folders by name or path..."
+            className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          />
         </div>
-        {!loading && <span className="text-sm text-gray-500 whitespace-nowrap">{filtered.length}/{folders.length} folder{folders.length!==1?'s':''}</span>}
+        
+        {/* Collector Filter */}
+        <div className="w-full md:w-72">
+          <select
+            value={selectedCollector}
+            onChange={(e) => setSelectedCollector(e.target.value)}
+            className="w-full text-sm bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-gray-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          >
+            <option value="">All Data Collectors</option>
+            {COLLECTORS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Clear Button */}
+        {(search || selectedCollector) && (
+          <button
+            onClick={() => { setSearch(''); setSelectedCollector(''); }}
+            className="px-4 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-500 hover:text-gray-700 text-sm font-semibold rounded-xl transition-all"
+          >
+            Reset
+          </button>
+        )}
+
+        {!loading && (
+          <span className="text-sm text-gray-500 font-medium whitespace-nowrap ml-auto self-center">
+            {filtered.length} of {folders.length} folder{folders.length!==1?'s':''}
+          </span>
+        )}
       </div>
 
       {/* Tree */}

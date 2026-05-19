@@ -218,6 +218,8 @@ class MapDataPoint(BaseModel):
     created_at: datetime
     image_url: Optional[str] = None
     location_name: Optional[str] = None
+    collector_name: Optional[str] = None
+    collector_role: Optional[str] = None
 
 
 # ============= Download Log Schemas =============

@@ -17,21 +17,22 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import XYZ from 'ol/source/XYZ';
 import Feature from 'ol/Feature';
-import Point from 'ol/geom/Point';
+import { Point, Polygon, LineString } from 'ol/geom';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { Style, Fill, Stroke, Circle as CircleStyle, Text, RegularShape } from 'ol/style';
 import Overlay from 'ol/Overlay';
 import { Viewer } from 'mapillary-js';
 import 'mapillary-js/dist/mapillary.css';
-import { complaintApi, customDataApi } from '../services/api';
+import { complaintApi, customDataApi, userApi } from '../services/api';
 import { useAuthStore } from '../store/store';
+import { UserDetailsModal, DUMMY_ARABIC_USERS, enhanceDbUser } from './AdminUsers';
 import { toast } from 'react-toastify';
 import {
   FiMapPin, FiAlertCircle, FiFilter, FiLoader, FiX,
   FiRefreshCw, FiList, FiEye, FiAlertTriangle,
   FiClock, FiTag, FiCamera, FiMaximize2, FiMinimize2,
   FiLayers, FiZoomIn, FiEyeOff, FiGlobe, FiNavigation2,
-  FiDatabase, FiCheck,
+  FiDatabase, FiCheck, FiTable, FiSearch, FiUser,
 } from 'react-icons/fi';
 import 'ol/ol.css';
 
@@ -157,7 +158,7 @@ function useAuthImage(imageUrl) {
 
 // ── Map Popup ────────────────────────────────────────────────────────────────
 
-function MapPopup({ shop, onClose, onViewDetail, onStreetView }) {
+function MapPopup({ shop, onClose, onViewDetail, onStreetView, onShowProfile }) {
   if (!shop) return null;
   const color = violationColor(shop.disaster_type);
   const statusColor = STATUS_COLORS[shop.status] || '#9ca3af';
@@ -246,6 +247,21 @@ function MapPopup({ shop, onClose, onViewDetail, onStreetView }) {
             <FiClock size={12} className="text-gray-400 flex-shrink-0" />
             <span>{shop.created_at ? new Date(shop.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
           </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <FiUser size={12} className="text-gray-400 flex-shrink-0" />
+            <span className="flex items-center gap-1">Inspector: 
+              {shop.collector_name ? (
+                <button
+                  onClick={() => onShowProfile && onShowProfile(shop.collector_name)}
+                  className="font-bold text-blue-500 hover:text-blue-400 hover:underline transition-colors focus:outline-none"
+                >
+                  {shop.collector_name}
+                </button>
+              ) : (
+                <strong>System</strong>
+              )}
+            </span>
+          </div>
           <div className="flex items-center justify-between">
             <span
               className="font-semibold capitalize px-2 py-0.5 rounded-full text-white text-xs"
@@ -327,6 +343,20 @@ function StatBadge({ label, value, color }) {
 
 // ── Layer Management Panel ────────────────────────────────────────────────────
 
+const formatRole = (role) => {
+  const labels = {
+    super_admin: 'Super Admin',
+    admin: 'Administrator',
+    municipality_admin: 'Municipality Admin',
+    supervisor: 'Supervisor',
+    field_inspector: 'Field Inspector',
+    auditor: 'Auditor',
+    operator: 'System Operator',
+    user: 'User',
+  };
+  return labels[role] || role;
+};
+
 const LAYER_META = [
   {
     key: 'basemap',
@@ -352,7 +382,7 @@ const LAYER_META = [
   },
 ];
 
-function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, customPlottedFiles = [], onDeleteCustomPlot }) {
+function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, customPlottedFiles = [], onDeleteCustomPlot, onOpenAttributeTable }) {
   return (
     <div className="absolute top-24 left-2 z-30 flex flex-col items-start gap-1">
       {/* Toggle button — styled like OL zoom controls */}
@@ -410,6 +440,16 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, cus
                         <FiZoomIn size={13} />
                       </button>
                     )}
+                    {/* Attribute table toggle button */}
+                    {layer.key === 'violations' && onOpenAttributeTable && (
+                      <button
+                        onClick={() => onOpenAttributeTable(layer.key, layer.label)}
+                        title="Open Attribute Table"
+                        className="text-gray-400 hover:text-blue-500 transition-colors flex-shrink-0"
+                      >
+                        <FiTable size={13} />
+                      </button>
+                    )}
                     {/* Visibility toggle */}
                     <button
                       onClick={() => onToggleLayer(layer.key)}
@@ -454,6 +494,16 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, cus
                         >
                           <FiZoomIn size={13} />
                         </button>
+                        {/* Attribute table toggle button */}
+                        {onOpenAttributeTable && (
+                          <button
+                            onClick={() => onOpenAttributeTable(file.filename, file.filename)}
+                            title="Open Attribute Table"
+                            className="text-gray-400 hover:text-indigo-500 transition-colors flex-shrink-0"
+                          >
+                            <FiTable size={13} />
+                          </button>
+                        )}
                         {/* Visibility toggle */}
                         <button
                           onClick={() => onToggleLayer(file.filename)}
@@ -512,6 +562,311 @@ async function fetchNearestMlyImage(lat, lon) {
   } catch { return null; }
 }
 
+function MultiSelectDropdown({ options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleToggle = (opt) => {
+    if (selected.includes(opt)) {
+      onChange(selected.filter(item => item !== opt));
+    } else {
+      onChange([...selected, opt]);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selected.length === options.length) {
+      onChange([]);
+    } else {
+      onChange([...options]);
+    }
+  };
+
+  return (
+    <div className="relative font-sans text-xs" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-white hover:border-blue-500 transition-colors flex items-center justify-between gap-2 min-w-[150px] max-w-[220px]"
+      >
+        <span className="truncate">
+          {selected.length === 0
+            ? "All Values"
+            : selected.length === 1
+            ? selected[0]
+            : `${selected.length} selected`}
+        </span>
+        <span className="text-slate-400 text-[9px]">▼</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 bottom-full mb-1.5 z-30 w-64 max-h-60 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-xl p-2 flex flex-col gap-1">
+          <div className="flex items-center justify-between border-b border-slate-850 pb-1.5 mb-1 px-1 flex-shrink-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase">Select values</span>
+            <button
+              onClick={handleSelectAll}
+              type="button"
+              className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+            >
+              {selected.length === options.length ? "Deselect All" : "Select All"}
+            </button>
+          </div>
+
+          <div className="overflow-y-auto flex-1 flex flex-col gap-0.5 max-h-48 pr-1">
+            {options.map((opt, i) => {
+              const isChecked = selected.includes(opt);
+              return (
+                <label
+                  key={i}
+                  className="flex items-center gap-2.5 px-2 py-1 rounded hover:bg-slate-900 cursor-pointer text-slate-300 hover:text-white transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => handleToggle(opt)}
+                    className="accent-blue-500 rounded border-slate-700 bg-slate-900 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="truncate text-xs">{opt}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttributeTable({ type, name, search, setSearch, filterField, setFilterField, filterValue, setFilterValue, getUniqueValues, rows, onClose, onZoomToRow, onIdentify, plottedFiles, navigate, onShowProfile }) {
+  let headers = [];
+  if (type === 'violations') {
+    headers = ['ID / Submission ID', 'Title', 'Violation Type', 'Severity', 'Status', 'Zone', 'Inspector', 'Created Date'];
+  } else {
+    if (rows.length > 0) {
+      headers = Object.keys(rows[0]).filter(k => k !== '__id');
+    }
+  }
+
+  const fileMeta = plottedFiles?.find(f => f.filename === type);
+  const latF = fileMeta?.latField;
+  const lonF = fileMeta?.lonField;
+
+  const uniqueOptions = filterField ? getUniqueValues(filterField, type) : [];
+
+  return (
+    <div className="h-[45%] bg-slate-900 border-t border-slate-700 flex flex-col z-20 relative select-none">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <FiTable className="text-blue-400" size={15} />
+          <span className="text-xs font-bold text-white uppercase tracking-wider">
+            Attribute Table: <span className="text-blue-400 normal-case">{name}</span>
+          </span>
+          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
+            {rows.length} records
+          </span>
+        </div>
+
+        {/* Filters and Search */}
+        <div className="flex items-center gap-4">
+          {/* Field Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 font-bold uppercase">Field Filter:</span>
+            <select
+              value={filterField}
+              onChange={(e) => {
+                setFilterField(e.target.value);
+                setFilterValue([]);
+              }}
+              className="bg-slate-900 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-blue-500 max-w-[130px] font-sans"
+            >
+              <option value="">-- Select Field --</option>
+              {headers.map((h, i) => (
+                <option key={i} value={h}>{h}</option>
+              ))}
+            </select>
+            
+            {filterField && (
+              <MultiSelectDropdown
+                options={uniqueOptions}
+                selected={filterValue}
+                onChange={setFilterValue}
+              />
+            )}
+          </div>
+
+          {/* Global Search */}
+          <div className="relative">
+            <FiSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search attributes..."
+              className="bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 w-44 font-sans"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              >
+                <FiX size={12} />
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-red-400 transition-colors"
+            title="Close attribute table"
+          >
+            <FiX size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Table Body */}
+      <div className="flex-1 overflow-auto">
+        {rows.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+            <FiTable size={32} className="opacity-40" />
+            <p className="text-xs">No records found matching query or active filter</p>
+          </div>
+        ) : (
+          <table className="w-full text-left border-collapse font-sans text-xs">
+            <thead>
+              <tr className="sticky top-0 bg-slate-800 text-slate-300 border-b border-slate-700 z-10">
+                <th className="px-3 py-2 font-bold w-24 text-center">Actions</th>
+                {headers.map((h, i) => (
+                  <th key={i} className="px-3 py-2 font-semibold tracking-wider uppercase text-[10px]">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800 text-slate-300">
+              {rows.map((row, idx) => {
+                if (type === 'violations') {
+                  const shop = row;
+                  const color = violationColor(shop.disaster_type);
+                  const statusColor = STATUS_COLORS[shop.status] || '#9ca3af';
+
+                  return (
+                    <tr key={shop.id || idx} className="hover:bg-slate-800/65 bg-slate-900/10 transition-colors">
+                      {/* Actions */}
+                      <td className="px-3 py-1.5 flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => onZoomToRow(shop.latitude, shop.longitude)}
+                          title="Zoom to location"
+                          className="p-1 hover:bg-slate-800 rounded text-blue-400 hover:text-blue-300 transition-colors"
+                        >
+                          <FiNavigation2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => onIdentify(shop, true)}
+                          title="Identify feature on Map"
+                          className="p-1 hover:bg-slate-800 rounded text-green-400 hover:text-green-300 transition-colors"
+                        >
+                          <FiEye size={13} />
+                        </button>
+                        <button
+                          onClick={() => navigate(`/complaints/${shop.id}`)}
+                          title="Open report page"
+                          className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                        >
+                          <FiMaximize2 size={13} />
+                        </button>
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-slate-500 font-bold">{shop.kobo_submission_id || shop.id}</td>
+                      <td className="px-3 py-1.5 font-semibold text-white truncate max-w-[180px]" title={shop.title}>{shop.title?.replace('Illegal Shop: ', '') || '—'}</td>
+                      <td className="px-3 py-1.5">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: color }}>
+                          {violationLabel(shop.disaster_type)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className="inline-block uppercase px-2 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style={{ backgroundColor: statusColor }}>
+                          {shop.severity || 'Medium'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className="capitalize">{shop.status?.replace(/_/g, ' ') || '—'}</span>
+                      </td>
+                      <td className="px-3 py-1.5 font-semibold text-slate-300">{shop.location_name || '—'}</td>
+                      <td className="px-3 py-1.5 font-medium">
+                        {shop.collector_name ? (
+                          <button
+                            onClick={() => onShowProfile(shop.collector_name)}
+                            className="text-blue-400 hover:text-blue-300 hover:underline transition-all text-left font-semibold"
+                            title={`View profile of ${shop.collector_name}`}
+                          >
+                            {shop.collector_name}
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">System</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-400">
+                        {shop.created_at ? new Date(shop.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                    </tr>
+                  );
+                } else {
+                  const lat = parseFloat(row[latF]);
+                  const lon = parseFloat(row[lonF]);
+                  const canZoom = !isNaN(lat) && !isNaN(lon);
+
+                  return (
+                    <tr key={idx} className="hover:bg-slate-800/65 bg-slate-900/10 transition-colors">
+                      {/* Actions */}
+                      <td className="px-3 py-1.5 flex items-center justify-center gap-2">
+                        {canZoom ? (
+                          <>
+                            <button
+                              onClick={() => onZoomToRow(lat, lon)}
+                              title="Zoom to point location"
+                              className="p-1 hover:bg-slate-800 rounded text-indigo-400 hover:text-indigo-300 transition-colors inline-block"
+                            >
+                              <FiNavigation2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => onIdentify(row, false)}
+                              title="Identify custom point on Map"
+                              className="p-1 hover:bg-slate-800 rounded text-green-400 hover:text-green-300 transition-colors inline-block"
+                            >
+                              <FiEye size={13} />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-slate-600 font-medium">No GPS</span>
+                        )}
+                      </td>
+                      {headers.map((h, i) => (
+                        <td key={i} className="px-3 py-1.5 max-w-[200px] truncate" title={String(row[h] || '')}>
+                          {row[h] !== null && row[h] !== undefined ? String(row[h]) : <em className="text-slate-600">null</em>}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                }
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MapPage() {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
@@ -528,7 +883,59 @@ export default function MapPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedShop, setSelectedShop] = useState(null);
   const [showList, setShowList] = useState(false);
-  const [filters, setFilters] = useState({ status: '', violation: '', zone: '' });
+  const [filters, setFilters] = useState({ status: '', violation: '', zone: '', collector: '' });
+  
+  // Attribute table states
+  const [attributeTableOpen, setAttributeTableOpen] = useState(false);
+  const [attributeTableType, setAttributeTableType] = useState(''); // 'violations' or custom filename
+  const [attributeTableName, setAttributeTableName] = useState('');
+  const [attributeTableSearch, setAttributeTableSearch] = useState('');
+  const [attributeTableFilterField, setAttributeTableFilterField] = useState('');
+  const [attributeTableFilterValue, setAttributeTableFilterValue] = useState([]);
+  const [inspectorProfile, setInspectorProfile] = useState(null);
+
+  const handleShowInspectorProfile = async (collectorName) => {
+    try {
+      const response = await userApi.listUsers(0, 200);
+      const dbUsers = response.data.map(enhanceDbUser);
+      const dbUsernames = new Set(dbUsers.map(u => u.username));
+      const combined = [
+        ...dbUsers,
+        ...DUMMY_ARABIC_USERS.filter(du => !dbUsernames.has(du.username))
+      ];
+      const cleanParam = collectorName.toLowerCase().trim();
+      const matched = combined.find(u => {
+        const fullName = (u.full_name || '').toLowerCase();
+        const username = (u.username || '').toLowerCase();
+        const email = (u.email || '').toLowerCase();
+        
+        if (username === cleanParam || email === cleanParam) return true;
+        if (fullName === cleanParam) return true;
+        if (fullName && (fullName.includes(cleanParam) || cleanParam.includes(fullName))) return true;
+        
+        // Stricter word match: need exactly matching words rather than partial loose matches
+        const paramWords = cleanParam.replace(/[()]/g, '').split(/[\s_-]+/).filter(w => w.length > 2);
+        const userWords = (fullName + ' ' + username).replace(/[()]/g, '').split(/[\s_-]+/).filter(w => w.length > 2);
+        
+        let matchCount = 0;
+        paramWords.forEach(pw => {
+          if (userWords.some(uw => uw === pw || uw.includes(pw) || pw.includes(uw))) {
+            matchCount++;
+          }
+        });
+        
+        // Require all significant param words to match, or at least 2
+        return matchCount > 0 && matchCount >= Math.min(2, paramWords.length);
+      });
+      if (matched) {
+        setInspectorProfile(matched);
+      } else {
+        toast.error('Inspector profile not found.');
+      }
+    } catch {
+      toast.error('Failed to load inspector profile.');
+    }
+  };
   const [streetView, setStreetView] = useState(false);
   const [mlyImageId, setMlyImageId] = useState(null);
   const [mlyLoading, setMlyLoading] = useState(false);
@@ -544,6 +951,16 @@ export default function MapPage() {
     mly_coverage: false,
   });
   const layerRefs = useRef({});
+
+  const getMapHeight = () => {
+    if (streetView) {
+      return svExpanded ? '40%' : '55%';
+    }
+    if (attributeTableOpen) {
+      return '55%';
+    }
+    return '100%';
+  };
 
   // Custom tabular plotting states
   const [selectedCustomPoint, setSelectedCustomPoint] = useState(null);
@@ -756,7 +1173,7 @@ export default function MapPage() {
   useEffect(() => { loadViolations(); }, [loadViolations]);
 
   // ── Plot markers ──
-  const plotMarkers = useCallback((data) => {
+  const plotMarkers = useCallback((data, shouldFit = true) => {
     if (!mapRef.current) return;
     const src = layerRefs.current.violations?.getSource();
     if (!src) return;
@@ -783,7 +1200,7 @@ export default function MapPage() {
       }));
       src.addFeature(feature);
     });
-    if (data.length > 0) {
+    if (shouldFit && data.length > 0) {
       const ext = src.getExtent();
       mapRef.current.getView().fit(ext, { padding: [80, 80, 80, 80], maxZoom: 14, duration: 700 });
     }
@@ -794,10 +1211,66 @@ export default function MapPage() {
     if (filters.status && c.status !== filters.status) return false;
     if (filters.violation && c.disaster_type !== filters.violation) return false;
     if (filters.zone && c.location_name !== filters.zone) return false;
+    if (filters.collector && c.collector_name !== filters.collector) return false;
     return true;
   });
 
-  useEffect(() => { plotMarkers(filtered); }, [filters, violations, plotMarkers]);
+  useEffect(() => {
+    let activeData = filtered;
+
+    if (attributeTableOpen && attributeTableType === 'violations') {
+      // Apply column field filter
+      if (attributeTableFilterField && attributeTableFilterValue && attributeTableFilterValue.length > 0) {
+        const fField = attributeTableFilterField;
+        const selectedVals = attributeTableFilterValue;
+
+        activeData = activeData.filter(row => {
+          let val = '';
+          if (fField.includes('ID')) val = row.kobo_submission_id || row.id;
+          else if (fField === 'Title') val = row.title;
+          else if (fField === 'Violation Type') val = row.disaster_type;
+          else if (fField === 'Severity') val = row.severity || 'Medium';
+          else if (fField === 'Status') val = row.status;
+          else if (fField === 'Zone') val = row.location_name;
+          else if (fField === 'Inspector') val = row.collector_name;
+          else if (fField === 'Created Date') {
+            val = row.created_at ? new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+          }
+          const stringVal = String(val ?? '').trim() || '—';
+          return selectedVals.includes(stringVal);
+        });
+      }
+
+      // Apply search filter
+      const query = attributeTableSearch.toLowerCase().trim();
+      if (query) {
+        activeData = activeData.filter(row => {
+          return (
+            row.title?.toLowerCase().includes(query) ||
+            row.disaster_type?.toLowerCase().includes(query) ||
+            row.status?.toLowerCase().includes(query) ||
+            row.severity?.toLowerCase().includes(query) ||
+            row.collector_name?.toLowerCase().includes(query) ||
+            row.location_name?.toLowerCase().includes(query)
+          );
+        });
+      }
+    }
+
+    const isAttrTableFiltering = attributeTableOpen && 
+      attributeTableType === 'violations' && 
+      (attributeTableSearch || (attributeTableFilterField && attributeTableFilterValue?.length > 0));
+
+    plotMarkers(activeData, !isAttrTableFiltering);
+  }, [
+    filtered,
+    plotMarkers,
+    attributeTableOpen,
+    attributeTableType,
+    attributeTableSearch,
+    attributeTableFilterField,
+    attributeTableFilterValue
+  ]);
 
   // ── Stats ──
   const total = filtered.length;
@@ -807,6 +1280,13 @@ export default function MapPage() {
 
   const violationTypes = [...new Set(violations.map((c) => c.disaster_type).filter(Boolean))];
   const zones = [...new Set(violations.map((c) => c.location_name).filter(Boolean))];
+  
+  // Extract unique collectors with names and roles (avoid using JS Map due to shadowing with OpenLayers Map)
+  const collectors = violations
+    .map((c) => ({ name: c.collector_name, role: c.collector_role }))
+    .filter((col, index, self) =>
+      col.name && self.findIndex((t) => t.name === col.name) === index
+    );
 
   // ── Open Mapillary for a lat/lon ──
   const openStreetView = useCallback(async (lat, lon) => {
@@ -1092,6 +1572,199 @@ export default function MapPage() {
     toast.info('Cleared all custom plots.');
   };
 
+  const getUniqueFieldValues = (fieldType, tableType) => {
+    let rawRows = [];
+    if (tableType === 'violations') {
+      rawRows = filtered;
+    } else {
+      const layer = layerRefs.current[tableType];
+      if (!layer) return [];
+      const features = layer.getSource().getFeatures();
+      rawRows = features.map(f => f.get('customData')).filter(Boolean);
+    }
+
+    const valSet = new Set();
+    rawRows.forEach(row => {
+      let val = '';
+      if (tableType === 'violations') {
+        if (fieldType.includes('ID')) val = row.kobo_submission_id || row.id;
+        else if (fieldType === 'Title') val = row.title;
+        else if (fieldType === 'Violation Type') val = row.disaster_type;
+        else if (fieldType === 'Severity') val = row.severity || 'Medium';
+        else if (fieldType === 'Status') val = row.status;
+        else if (fieldType === 'Zone') val = row.location_name;
+        else if (fieldType === 'Inspector') val = row.collector_name;
+        else if (fieldType === 'Created Date') {
+          val = row.created_at ? new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+        }
+      } else {
+        val = row[fieldType];
+      }
+      const stringVal = String(val ?? '').trim();
+      valSet.add(stringVal || '—');
+    });
+
+    return Array.from(valSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  };
+
+  const handleOpenAttributeTable = (key, label) => {
+    if (key !== 'violations') {
+      const layer = layerRefs.current[key];
+      if (!layer) {
+        toast.warn(`Please plot the tabular dataset first to view its attributes.`);
+        return;
+      }
+    }
+    setAttributeTableType(key);
+    setAttributeTableName(label);
+    setAttributeTableOpen(true);
+    setAttributeTableSearch('');
+    setAttributeTableFilterField('');
+    setAttributeTableFilterValue([]);
+  };
+
+  const getAttributeTableRows = () => {
+    let baseRows = [];
+    if (attributeTableType === 'violations') {
+      baseRows = filtered;
+    } else {
+      const layer = layerRefs.current[attributeTableType];
+      if (!layer) return [];
+      const features = layer.getSource().getFeatures();
+      baseRows = features.map(f => f.get('customData')).filter(Boolean);
+    }
+
+    // 1. Column Field Filter (Multi-select)
+    if (attributeTableFilterField && attributeTableFilterValue && attributeTableFilterValue.length > 0) {
+      const fField = attributeTableFilterField;
+      const selectedVals = attributeTableFilterValue;
+      
+      baseRows = baseRows.filter(row => {
+        let val = '';
+        if (attributeTableType === 'violations') {
+          if (fField.includes('ID')) val = row.kobo_submission_id || row.id;
+          else if (fField === 'Title') val = row.title;
+          else if (fField === 'Violation Type') val = row.disaster_type;
+          else if (fField === 'Severity') val = row.severity || 'Medium';
+          else if (fField === 'Status') val = row.status;
+          else if (fField === 'Zone') val = row.location_name;
+          else if (fField === 'Inspector') val = row.collector_name;
+          else if (fField === 'Created Date') {
+            val = row.created_at ? new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+          }
+        } else {
+          val = row[fField];
+        }
+        const stringVal = String(val ?? '').trim() || '—';
+        return selectedVals.includes(stringVal);
+      });
+    }
+
+    // 2. Global Search Query
+    const query = attributeTableSearch.toLowerCase().trim();
+    if (query) {
+      baseRows = baseRows.filter(row => {
+        if (attributeTableType === 'violations') {
+          return (
+            row.title?.toLowerCase().includes(query) ||
+            row.disaster_type?.toLowerCase().includes(query) ||
+            row.status?.toLowerCase().includes(query) ||
+            row.severity?.toLowerCase().includes(query) ||
+            row.collector_name?.toLowerCase().includes(query) ||
+            row.location_name?.toLowerCase().includes(query)
+          );
+        } else {
+          return Object.values(row).some(val => 
+            String(val).toLowerCase().includes(query)
+          );
+        }
+      });
+    }
+
+    return baseRows;
+  };
+
+  // ── Custom layer dynamic style filtering based on Attribute Table ──
+  useEffect(() => {
+    if (!mapRef.current || !attributeTableOpen || attributeTableType === 'violations' || attributeTableType === '') return;
+
+    const layer = layerRefs.current[attributeTableType];
+    if (!layer) return;
+
+    const source = layer.getSource();
+    if (!source) return;
+
+    const features = source.getFeatures();
+    const activeRows = getAttributeTableRows();
+
+    features.forEach(f => {
+      const data = f.get('customData');
+      if (!data) return;
+
+      const isVisible = activeRows.includes(data);
+      if (isVisible) {
+        f.setStyle(undefined);
+      } else {
+        f.setStyle(new Style({}));
+      }
+    });
+  }, [
+    attributeTableOpen,
+    attributeTableType,
+    attributeTableSearch,
+    attributeTableFilterField,
+    attributeTableFilterValue,
+    plottedFiles
+  ]);
+
+  const zoomToRow = (lat, lon) => {
+    if (!mapRef.current || !lat || !lon) return;
+    mapRef.current.getView().animate({
+      center: fromLonLat([lon, lat]),
+      zoom: 16,
+      duration: 600
+    });
+  };
+
+  const handleFeatureIdentify = (row, isViolation) => {
+    if (!mapRef.current) return;
+    
+    let lat, lon;
+    if (isViolation) {
+      lat = parseFloat(row.latitude);
+      lon = parseFloat(row.longitude);
+    } else {
+      const fileMeta = plottedFiles.find(f => f.filename === attributeTableType);
+      const latF = fileMeta?.latField;
+      const lonF = fileMeta?.lonField;
+      lat = parseFloat(row[latF]);
+      lon = parseFloat(row[lonF]);
+    }
+    
+    if (isNaN(lat) || isNaN(lon)) {
+      toast.warn("Invalid coordinate values for this record.");
+      return;
+    }
+    
+    const coord = fromLonLat([lon, lat]);
+    
+    mapRef.current.getView().animate({
+      center: coord,
+      zoom: 17,
+      duration: 600
+    });
+    
+    overlayRef.current?.setPosition(coord);
+    if (isViolation) {
+      setSelectedShop(row);
+      setSelectedCustomPoint(null);
+    } else {
+      setSelectedCustomPoint(row);
+      setSelectedShop(null);
+    }
+    setMlyCoverageClick(null);
+  };
+
   return (
     <div className="flex h-full relative overflow-hidden">
 
@@ -1104,10 +1777,14 @@ export default function MapPage() {
         onZoomTo={zoomToLayer}
         customPlottedFiles={plottedFiles}
         onDeleteCustomPlot={deleteCustomPlot}
+        onOpenAttributeTable={handleOpenAttributeTable}
       />
 
       {/* ── Basemap Switcher (bottom-left, over map) ── */}
-      <div className="absolute bottom-8 left-2 z-30 flex flex-col items-start gap-1">
+      <div
+        className="absolute left-2 z-30 flex flex-col items-start gap-1 transition-all duration-300"
+        style={{ bottom: attributeTableOpen ? 'calc(45% + 12px)' : '2rem' }}
+      >
         <button
           onClick={() => setBasemapOpen(v => !v)}
           title="Change basemap"
@@ -1185,34 +1862,58 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* ── Map (shrinks when street view is open) ── */}
-      <div
-        ref={mapContainer}
-        className="flex-1 transition-all duration-300"
-        style={{ height: streetView ? (svExpanded ? '40%' : '55%') : '100%' }}
-      />
+      {/* ── Map and Attribute Table Section ── */}
+      <div className="flex-1 flex flex-col h-full min-w-0 relative">
+        <div
+          ref={mapContainer}
+          className="w-full transition-all duration-300"
+          style={{ height: getMapHeight() }}
+        />
 
+        {/* ── Popup overlay ── */}
+        <div ref={popupRef} style={{ position: 'absolute', zIndex: 10 }}>
+          {selectedShop && (
+            <MapPopup
+              shop={selectedShop}
+              onClose={() => {
+                overlayRef.current?.setPosition(undefined);
+                setSelectedShop(null);
+              }}
+              onViewDetail={(id) => navigate(`/complaints/${id}`)}
+              onStreetView={() => selectedShop && openStreetView(selectedShop.latitude, selectedShop.longitude)}
+              onShowProfile={handleShowInspectorProfile}
+            />
+          )}
+          {selectedCustomPoint && (
+            <CustomPointPopup
+              data={selectedCustomPoint}
+              onClose={() => {
+                overlayRef.current?.setPosition(undefined);
+                setSelectedCustomPoint(null);
+              }}
+            />
+          )}
+        </div>
 
-      {/* ── Popup overlay ── */}
-      <div ref={popupRef} style={{ position: 'absolute', zIndex: 10 }}>
-        {selectedShop && (
-          <MapPopup
-            shop={selectedShop}
-            onClose={() => {
-              overlayRef.current?.setPosition(undefined);
-              setSelectedShop(null);
-            }}
-            onViewDetail={(id) => navigate(`/complaints/${id}`)}
-            onStreetView={() => selectedShop && openStreetView(selectedShop.latitude, selectedShop.longitude)}
-          />
-        )}
-        {selectedCustomPoint && (
-          <CustomPointPopup
-            data={selectedCustomPoint}
-            onClose={() => {
-              overlayRef.current?.setPosition(undefined);
-              setSelectedCustomPoint(null);
-            }}
+        {/* ── Attribute Table Drawer ── */}
+        {attributeTableOpen && (
+          <AttributeTable
+            type={attributeTableType}
+            name={attributeTableName}
+            search={attributeTableSearch}
+            setSearch={setAttributeTableSearch}
+            filterField={attributeTableFilterField}
+            setFilterField={setAttributeTableFilterField}
+            filterValue={attributeTableFilterValue}
+            setFilterValue={setAttributeTableFilterValue}
+            getUniqueValues={getUniqueFieldValues}
+            rows={getAttributeTableRows()}
+            onClose={() => setAttributeTableOpen(false)}
+            onZoomToRow={zoomToRow}
+            onIdentify={handleFeatureIdentify}
+            plottedFiles={plottedFiles}
+            navigate={navigate}
+            onShowProfile={handleShowInspectorProfile}
           />
         )}
       </div>
@@ -1335,7 +2036,7 @@ export default function MapPage() {
                     <FiRefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
                   </button>
                   <button
-                    onClick={() => setFilters({ status: '', violation: '', zone: '' })}
+                    onClick={() => setFilters({ status: '', violation: '', zone: '', collector: '' })}
                     className="text-xs text-slate-400 hover:text-white transition-colors"
                   >
                     Reset
@@ -1364,6 +2065,20 @@ export default function MapPage() {
                 <option value="">All Zones</option>
                 {zones.map((z) => (
                   <option key={z} value={z}>{zoneLabel(z)}</option>
+                ))}
+              </select>
+
+              {/* Collected By (Collector) */}
+              <select
+                value={filters.collector}
+                onChange={(e) => setFilters((f) => ({ ...f, collector: e.target.value }))}
+                className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">All Collectors</option>
+                {collectors.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name} ({formatRole(c.role)})
+                  </option>
                 ))}
               </select>
 
@@ -1651,6 +2366,14 @@ export default function MapPage() {
         )}
       </div>
 
+      {/* Inspector Profile Modal */}
+      {inspectorProfile && (
+        <UserDetailsModal
+          mode="view"
+          user={inspectorProfile}
+          onClose={() => setInspectorProfile(null)}
+        />
+      )}
     </div>
   );
 }

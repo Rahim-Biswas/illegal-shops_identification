@@ -151,6 +151,8 @@ def get_user_map_data(
             created_at=c.created_at,
             image_url=c.image_url,
             location_name=c.location_name,
+            collector_name=c.user.full_name if c.user else "System",
+            collector_role=c.user.role.value if (c.user and c.user.role) else "user",
         )
         for c in complaints
     ]
@@ -248,6 +250,8 @@ def get_map_data(
             created_at=c.created_at,
             image_url=c.image_url,
             location_name=c.location_name,
+            collector_name=c.user.full_name if c.user else "System",
+            collector_role=c.user.role.value if (c.user and c.user.role) else "user",
         )
         for c in complaints
     ]
