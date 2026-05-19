@@ -31,6 +31,7 @@ import KoboDataPage from './pages/KoboDataPage';
 import FormBuilder from './pages/FormBuilder';
 import KoboAdmin from './pages/KoboAdmin';
 import DataHouse from './pages/DataHouse';
+import CustomDataUpload from './pages/CustomDataUpload';
 import StreetExplorer from './pages/StreetExplorer';
 import AiLabPage from './pages/AiLabPage';
 
@@ -95,6 +96,14 @@ export default function App() {
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/data-house" element={<DataHouse />} />
+                    <Route
+                      path="/custom-data"
+                      element={
+                        <AdminRoute>
+                          <CustomDataUpload />
+                        </AdminRoute>
+                      }
+                    />
                     <Route path="/street-data" element={<StreetExplorer />} />
                     <Route path="/ai-lab" element={<AiLabPage />} />
                     <Route
@@ -166,7 +175,7 @@ export default function App() {
                       }
                     />
                     <Route
-                      path="/admin/kobo"
+                      path="/admin/kobo/manage"
                       element={
                         <AdminRoute>
                           <KoboAdmin />

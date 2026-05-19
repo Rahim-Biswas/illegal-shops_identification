@@ -108,20 +108,21 @@ export default function KoboAdmin() {
         <FiCheckCircle size={20} className="text-green-500 flex-shrink-0" />
       </div>
 
+      {/* Back Button */}
+      <div>
+        <button
+          onClick={() => navigate('/data-house')}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+        >
+          <FiArrowLeft size={16} /> Back to Data House
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/admin')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
-          >
-            <FiArrowLeft size={20} />
-            Back to Admin
-          </button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">KoboToolbox Sync</h1>
-            <p className="text-gray-600 mt-1">Shop inspection data synchronization</p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">KoboToolbox Sync</h1>
+          <p className="text-gray-600 mt-1">Shop inspection data synchronization</p>
         </div>
       </div>
 

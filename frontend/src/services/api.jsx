@@ -168,4 +168,17 @@ export const yoloApi = {
   },
 };
 
+// ============= Custom Data File APIs =============
+
+export const customDataApi = {
+  uploadFile: (formData) =>
+    api.post('/data-files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  listFiles: () => api.get('/data-files/list'),
+  previewFile: (filename, limit = 20) =>
+    api.get(`/data-files/preview/${encodeURIComponent(filename)}`, { params: { limit } }),
+  deleteFile: (filename) => api.delete(`/minio/folders/custom-data/${encodeURIComponent(filename)}`),
+};
+
 export default api;

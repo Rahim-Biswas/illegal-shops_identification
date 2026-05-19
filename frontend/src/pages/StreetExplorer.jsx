@@ -7,11 +7,12 @@
  * Auto-refreshes every 30 s so new data appears without a reload.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FiFolder, FiFolderMinus, FiFilm, FiImage, FiFile,
   FiChevronRight, FiChevronDown, FiSearch, FiHardDrive,
   FiRefreshCw, FiAlertCircle, FiCamera, FiUploadCloud,
-  FiFolderPlus, FiTrash2, FiEye, FiMoreVertical,
+  FiFolderPlus, FiTrash2, FiEye, FiMoreVertical, FiArrowLeft,
 } from 'react-icons/fi';
 import { minioApi } from '../services/api';
 import {
@@ -228,6 +229,7 @@ function Skeleton() {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function StreetExplorer() {
+  const navigate = useNavigate();
   const [folders,      setFolders]      = useState([]);
   const [totalFiles,   setTotalFiles]   = useState(0);
   const [totalSize,    setTotalSize]    = useState(0);
@@ -282,6 +284,15 @@ export default function StreetExplorer() {
 
   return (
     <div className="space-y-6">
+      {/* Back Button */}
+      <div>
+        <button
+          onClick={() => navigate('/data-house')}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+        >
+          <FiArrowLeft size={16} /> Back to Data House
+        </button>
+      </div>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

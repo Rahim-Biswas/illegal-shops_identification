@@ -5,7 +5,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/store';
 import {
-  FiCloud, FiFileText, FiArrowRight, FiDatabase, FiLock, FiVideo,
+  FiCloud, FiFileText, FiArrowRight, FiDatabase, FiLock, FiVideo, FiUpload
 } from 'react-icons/fi';
 
 const ALL_SOURCES = [
@@ -48,12 +48,26 @@ const ALL_SOURCES = [
     accentColor: 'violet',
     adminOnly: false,
   },
+  {
+    id: 'custom-data',
+    icon: FiUpload,
+    iconBg: 'from-amber-500 to-orange-400',
+    title: 'Custom Data Upload & View',
+    subtitle: 'Excel & CSV Files',
+    description:
+      'Upload, view, and manage custom Excel or CSV files containing shop data. Automatically parse fields and explore tabular datasets.',
+    path: '/custom-data',
+    tags: ['Excel', 'CSV', 'Upload', 'Tabular Viewer'],
+    accentColor: 'amber',
+    adminOnly: true,
+  },
 ];
 
 const ACCENT = {
   blue:   { card: 'hover:border-blue-300',   badge: 'bg-blue-50 text-blue-700 border-blue-100',       btn: 'bg-blue-600 hover:bg-blue-700',   ring: 'ring-blue-200'   },
   emerald:{ card: 'hover:border-emerald-300', badge: 'bg-emerald-50 text-emerald-700 border-emerald-100', btn: 'bg-emerald-600 hover:bg-emerald-700', ring: 'ring-emerald-200' },
   violet: { card: 'hover:border-violet-300',  badge: 'bg-violet-50 text-violet-700 border-violet-100',   btn: 'bg-violet-600 hover:bg-violet-700',  ring: 'ring-violet-200'  },
+  amber:  { card: 'hover:border-amber-300',   badge: 'bg-amber-50 text-amber-700 border-amber-100',      btn: 'bg-amber-600 hover:bg-amber-700',   ring: 'ring-amber-200'   },
 };
 
 export default function DataHouse() {

@@ -7,7 +7,7 @@ import { complaintApi } from '../services/api';
 import { useComplaintsStore, useAuthStore } from '../store/store';
 import { formatDate, getStatusColor, getSeverityColor } from '../utils/helpers';
 import { toast } from 'react-toastify';
-import { FiPlus, FiEye, FiEdit2, FiTrash2, FiFilter } from 'react-icons/fi';
+import { FiPlus, FiEye, FiEdit2, FiTrash2, FiFilter, FiArrowLeft } from 'react-icons/fi';
 
 const STATUSES = ['submitted', 'under_review', 'acknowledged', 'resolved', 'closed'];
 const SHOP_TYPES = ['Restaurant', 'Retail', 'Warehouse', 'Market Stall', 'Kiosk', 'Service Shop', 'Other'];
@@ -61,6 +61,16 @@ export default function ComplaintsList() {
 
   return (
     <div className="space-y-6">
+      {/* Back Button */}
+      <div>
+        <button
+          onClick={() => navigate('/data-house')}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+        >
+          <FiArrowLeft size={16} /> Back to Data House
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

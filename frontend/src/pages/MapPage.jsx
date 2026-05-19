@@ -23,7 +23,7 @@ import { Style, Fill, Stroke, Circle as CircleStyle, Text, RegularShape } from '
 import Overlay from 'ol/Overlay';
 import { Viewer } from 'mapillary-js';
 import 'mapillary-js/dist/mapillary.css';
-import { complaintApi } from '../services/api';
+import { complaintApi, customDataApi } from '../services/api';
 import { useAuthStore } from '../store/store';
 import { toast } from 'react-toastify';
 import {
@@ -31,6 +31,7 @@ import {
   FiRefreshCw, FiList, FiEye, FiAlertTriangle,
   FiClock, FiTag, FiCamera, FiMaximize2, FiMinimize2,
   FiLayers, FiZoomIn, FiEyeOff, FiGlobe, FiNavigation2,
+  FiDatabase, FiCheck,
 } from 'react-icons/fi';
 import 'ol/ol.css';
 
@@ -97,15 +98,15 @@ const STATUS_COLORS = {
 };
 
 const ZONE_LABELS = {
-  al_haram:    'Al Haram',
-  quba:        'Quba',
-  aziziyah:   'Aziziyah',
-  jabal_uhud:  'Jabal Uhud',
+  al_haram: 'Al Haram',
+  quba: 'Quba',
+  aziziyah: 'Aziziyah',
+  jabal_uhud: 'Jabal Uhud',
   al_manakhah: 'Al Manakhah',
-  al_awali:    'Al Awali',
-  bani_haritha:'Bani Haritha',
-  al_aqiq:     'Al Aqiq',
-  other:       'Other',
+  al_awali: 'Al Awali',
+  bani_haritha: 'Bani Haritha',
+  al_aqiq: 'Al Aqiq',
+  other: 'Other',
 };
 
 function violationColor(type) {
@@ -279,6 +280,40 @@ function MapPopup({ shop, onClose, onViewDetail, onStreetView }) {
   );
 }
 
+// ── Custom Point Popup ────────────────────────────────────────────────────────
+
+function CustomPointPopup({ data, onClose }) {
+  if (!data) return null;
+  return (
+    <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-80 overflow-hidden">
+      <div className="bg-indigo-600 px-4 py-3 flex items-center justify-between text-white">
+        <span className="text-xs font-bold uppercase tracking-wide flex items-center gap-1.5">
+          <FiList size={13} /> Plotted Point Attributes
+        </span>
+        <button onClick={onClose} className="text-indigo-200 hover:text-white transition-colors">
+          <FiX size={14} />
+        </button>
+      </div>
+      <div className="p-4 max-h-72 overflow-y-auto text-xs">
+        <table className="w-full text-left border-collapse">
+          <tbody>
+            {Object.entries(data).map(([key, val], idx) => (
+              <tr key={idx} className={`${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'} hover:bg-slate-100`}>
+                <td className="px-2 py-1.5 font-bold text-gray-700 border-b border-gray-100 break-words w-1/3">
+                  {key}
+                </td>
+                <td className="px-2 py-1.5 text-gray-600 border-b border-gray-100 break-all">
+                  {val !== null ? String(val) : <em className="text-gray-300">null</em>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Stat Badge ───────────────────────────────────────────────────────────────
 
 function StatBadge({ label, value, color }) {
@@ -317,7 +352,7 @@ const LAYER_META = [
   },
 ];
 
-function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo }) {
+function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, customPlottedFiles = [], onDeleteCustomPlot }) {
   return (
     <div className="absolute top-24 left-2 z-30 flex flex-col items-start gap-1">
       {/* Toggle button — styled like OL zoom controls */}
@@ -347,7 +382,7 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo }) {
           </div>
 
           {/* Layer list */}
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
             {LAYER_META.map((layer) => {
               const visible = layerVis[layer.key];
               return (
@@ -387,14 +422,63 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo }) {
                 </div>
               );
             })}
-          </div>
 
-          {/* Footer hint
-          <div className="px-3 py-2 bg-slate-50 border-t border-gray-100">
-            <p className="text-xs text-slate-400">
-              <span className="text-green-500 font-semibold">■</span> Street View Coverage requires Mapillary token & zoom ≥ 12
-            </p>
-          </div> */}
+            {/* Custom Dynamic Plotted Layers */}
+            {customPlottedFiles.length > 0 && (
+              <>
+                <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                  <FiDatabase size={10} /> Tabular Datasets
+                </div>
+                {customPlottedFiles.map((file) => {
+                  const visible = layerVis[file.filename] !== false; // default to visible
+                  return (
+                    <div key={file.filename} className={`px-3 py-2 transition-colors ${visible ? 'bg-white' : 'bg-gray-50'}`}>
+                      <div className="flex items-center gap-2">
+                        {/* Color swatch (dot representing active file style) */}
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: file.color, opacity: visible ? 1 : 0.3 }}
+                        />
+                        {/* Dataset details */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${visible ? 'text-gray-800' : 'text-gray-400'}`} title={file.filename}>
+                            {file.filename}
+                          </p>
+                          <p className="text-[10px] text-gray-400 truncate">{file.success} plotted points</p>
+                        </div>
+                        {/* Zoom to */}
+                        <button
+                          onClick={() => onZoomTo(file.filename)}
+                          title="Zoom to dataset"
+                          className="text-gray-400 hover:text-indigo-500 transition-colors flex-shrink-0"
+                        >
+                          <FiZoomIn size={13} />
+                        </button>
+                        {/* Visibility toggle */}
+                        <button
+                          onClick={() => onToggleLayer(file.filename)}
+                          title={visible ? 'Hide dataset' : 'Show dataset'}
+                          className={`flex-shrink-0 transition-colors ${visible ? 'text-indigo-500 hover:text-indigo-700' : 'text-gray-300 hover:text-gray-500'}`}
+                        >
+                          {visible ? <FiEye size={14} /> : <FiEyeOff size={14} />}
+                        </button>
+                        {/* Remove/Delete */}
+                        {onDeleteCustomPlot && (
+                          <button
+                            onClick={() => onDeleteCustomPlot(file.filename)}
+                            title="Remove dataset"
+                            className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 ml-0.5"
+                          >
+                            <FiX size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -460,6 +544,19 @@ export default function MapPage() {
     mly_coverage: false,
   });
   const layerRefs = useRef({});
+
+  // Custom tabular plotting states
+  const [selectedCustomPoint, setSelectedCustomPoint] = useState(null);
+  const [sidebarTab, setSidebarTab] = useState('violations'); // 'violations' or 'custom'
+  const [customFiles, setCustomFiles] = useState([]);
+  const [loadingCustomFiles, setLoadingCustomFiles] = useState(false);
+  const [selectedCustomFile, setSelectedCustomFile] = useState('');
+  const [customFields, setCustomFields] = useState([]);
+  const [customRows, setCustomRows] = useState([]);
+  const [loadingCustomPreview, setLoadingCustomPreview] = useState(false);
+  const [latField, setLatField] = useState('');
+  const [lonField, setLonField] = useState('');
+  const [plottedFiles, setPlottedFiles] = useState([]); // Array of { filename, color, success, failed, latField, lonField }
 
   // ── Init map ──
   useEffect(() => {
@@ -577,15 +674,28 @@ export default function MapPage() {
           const coord = feature.getGeometry().getCoordinates();
           overlay.setPosition(coord);
           setSelectedShop(shop);
+          setSelectedCustomPoint(null);
           // Hide coverage popup if showing
           setMlyCoverageClick(null);
           hitShop = true;
           return true; // stop iterating
         }
+        // Custom tabular plotted point
+        if (feature.get('customData')) {
+          const data = feature.get('customData');
+          const coord = feature.getGeometry().getCoordinates();
+          overlay.setPosition(coord);
+          setSelectedCustomPoint(data);
+          setSelectedShop(null);
+          setMlyCoverageClick(null);
+          hitShop = true;
+          return true;
+        }
         // Mapillary coverage line
         if (layer === mlyCoverageLayer && !hitShop) {
           overlay.setPosition(undefined);
           setSelectedShop(null);
+          setSelectedCustomPoint(null);
           setMlyCoverageClick({ lat, lon, pixel: evt.pixel, coord: coordinate });
           return true;
         }
@@ -594,6 +704,7 @@ export default function MapPage() {
       if (!hitShop && !mapRef.current.forEachFeatureAtPixel(evt.pixel, () => true)) {
         overlay.setPosition(undefined);
         setSelectedShop(null);
+        setSelectedCustomPoint(null);
         setMlyCoverageClick(null);
       }
     });
@@ -601,7 +712,12 @@ export default function MapPage() {
     mapRef.current.on('pointermove', (evt) => {
       const hitShop = mapRef.current.hasFeatureAtPixel(evt.pixel, { layerFilter: (l) => l === violationsLayer });
       const hitMly = mapRef.current.hasFeatureAtPixel(evt.pixel, { layerFilter: (l) => l === mlyCoverageLayer });
-      mapRef.current.getTargetElement().style.cursor = (hitShop || hitMly) ? 'pointer' : '';
+      const hitCustom = mapRef.current.hasFeatureAtPixel(evt.pixel, {
+        layerFilter: (l) => {
+          return l !== baseTileLayer && l !== mlyCoverageLayer && l !== violationsLayer && l !== dotLayer;
+        }
+      });
+      mapRef.current.getTargetElement().style.cursor = (hitShop || hitMly || hitCustom) ? 'pointer' : '';
     });
   }, []);  // eslint-disable-line
 
@@ -799,13 +915,182 @@ export default function MapPage() {
 
   // ── Zoom to a layer extent ──
   const zoomToLayer = useCallback((key) => {
-    if (key === 'violations') {
-      const src = layerRefs.current.violations?.getSource();
-      if (!src || src.getFeatures().length === 0) return;
-      const ext = src.getExtent();
-      mapRef.current?.getView().fit(ext, { padding: [60, 60, 60, 60], maxZoom: 14, duration: 700 });
-    }
+    const src = layerRefs.current[key]?.getSource();
+    if (!src || src.getFeatures().length === 0) return;
+    const ext = src.getExtent();
+    mapRef.current?.getView().fit(ext, { padding: [60, 60, 60, 60], maxZoom: 14, duration: 700 });
   }, []);
+
+  // ── Custom Tabular Data Functions ──
+  useEffect(() => {
+    if (sidebarTab === 'custom') {
+      fetchCustomFiles();
+    }
+  }, [sidebarTab]);
+
+  const fetchCustomFiles = async () => {
+    setLoadingCustomFiles(true);
+    try {
+      const { data } = await customDataApi.listFiles();
+      setCustomFiles(data.files || []);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load custom file list');
+    } finally {
+      setLoadingCustomFiles(false);
+    }
+  };
+
+  const handleCustomFileChange = async (filename) => {
+    setSelectedCustomFile(filename);
+    setCustomFields([]);
+    setCustomRows([]);
+    setLatField('');
+    setLonField('');
+    if (!filename) return;
+
+    setLoadingCustomPreview(true);
+    try {
+      const { data } = await customDataApi.previewFile(filename, 0); // limit = 0 to get all rows
+      setCustomFields(data.fields_info || []);
+      setCustomRows(data.preview_rows || []);
+
+      const latCol = data.fields_info.find(f => f.is_latitude || f.name.toLowerCase().includes('lat') || f.name.toLowerCase() === 'y');
+      const lonCol = data.fields_info.find(f => f.is_longitude || f.name.toLowerCase().includes('lon') || f.name.toLowerCase().includes('lng') || f.name.toLowerCase() === 'x');
+
+      if (latCol) setLatField(latCol.name);
+      if (lonCol) setLonField(lonCol.name);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to fetch file structure');
+    } finally {
+      setLoadingCustomPreview(false);
+    }
+  };
+
+  const plotCustomData = () => {
+    if (!mapRef.current) return;
+
+    if (!selectedCustomFile || !latField || !lonField) {
+      toast.error('Please select a file and coordinate fields');
+      return;
+    }
+
+    if (plottedFiles.some(f => f.filename === selectedCustomFile)) {
+      toast.warn(`File ${selectedCustomFile} is already plotted.`);
+      return;
+    }
+
+    const colorPalette = ['#6366f1', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#f43f5e', '#14b8a6'];
+    const color = colorPalette[plottedFiles.length % colorPalette.length];
+
+    const source = new VectorSource();
+    const layer = new VectorLayer({
+      source: source,
+      zIndex: 11,
+      style: new Style({
+        image: new CircleStyle({
+          radius: 9,
+          fill: new Fill({ color: color }),
+          stroke: new Stroke({ color: '#ffffff', width: 2 }),
+        }),
+      }),
+    });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    customRows.forEach((row) => {
+      const rawLat = row[latField];
+      const rawLon = row[lonField];
+
+      const lat = parseFloat(rawLat);
+      const lon = parseFloat(rawLon);
+
+      if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        const feature = new Feature({
+          geometry: new Point(fromLonLat([lon, lat])),
+          customData: row,
+        });
+        source.addFeature(feature);
+        successCount++;
+      } else {
+        failCount++;
+      }
+    });
+
+    if (successCount === 0) {
+      toast.warn('No valid coordinates found in the dataset. Nothing plotted.');
+      return;
+    }
+
+    mapRef.current.addLayer(layer);
+    layerRefs.current[selectedCustomFile] = layer;
+
+    const newPlottedFile = {
+      filename: selectedCustomFile,
+      color,
+      success: successCount,
+      failed: failCount,
+      latField,
+      lonField
+    };
+
+    setPlottedFiles(prev => [...prev, newPlottedFile]);
+    setLayerVis(prev => ({ ...prev, [selectedCustomFile]: true }));
+
+    toast.success(`Successfully plotted ${successCount} points from ${selectedCustomFile}!`);
+
+    const ext = source.getExtent();
+    mapRef.current.getView().fit(ext, { padding: [80, 80, 80, 80], maxZoom: 15, duration: 700 });
+  };
+
+  const deleteCustomPlot = (filename) => {
+    if (!mapRef.current) return;
+
+    const layer = layerRefs.current[filename];
+    if (layer) {
+      mapRef.current.removeLayer(layer);
+      delete layerRefs.current[filename];
+    }
+
+    overlayRef.current?.setPosition(undefined);
+    setSelectedCustomPoint(null);
+
+    setPlottedFiles(prev => prev.filter(f => f.filename !== filename));
+    setLayerVis(prev => {
+      const copy = { ...prev };
+      delete copy[filename];
+      return copy;
+    });
+
+    toast.info(`Removed ${filename} plot from map.`);
+  };
+
+  const clearAllCustomPlots = () => {
+    if (!mapRef.current) return;
+
+    plottedFiles.forEach(file => {
+      const layer = layerRefs.current[file.filename];
+      if (layer) {
+        mapRef.current.removeLayer(layer);
+        delete layerRefs.current[file.filename];
+      }
+    });
+
+    overlayRef.current?.setPosition(undefined);
+    setSelectedCustomPoint(null);
+    setPlottedFiles([]);
+    setLayerVis(prev => {
+      const copy = { ...prev };
+      plottedFiles.forEach(file => {
+        delete copy[file.filename];
+      });
+      return copy;
+    });
+
+    toast.info('Cleared all custom plots.');
+  };
 
   return (
     <div className="flex h-full relative overflow-hidden">
@@ -817,6 +1102,8 @@ export default function MapPage() {
         layerVis={layerVis}
         onToggleLayer={(key) => setLayerVis(v => ({ ...v, [key]: !v[key] }))}
         onZoomTo={zoomToLayer}
+        customPlottedFiles={plottedFiles}
+        onDeleteCustomPlot={deleteCustomPlot}
       />
 
       {/* ── Basemap Switcher (bottom-left, over map) ── */}
@@ -908,15 +1195,26 @@ export default function MapPage() {
 
       {/* ── Popup overlay ── */}
       <div ref={popupRef} style={{ position: 'absolute', zIndex: 10 }}>
-        <MapPopup
-          shop={selectedShop}
-          onClose={() => {
-            overlayRef.current?.setPosition(undefined);
-            setSelectedShop(null);
-          }}
-          onViewDetail={(id) => navigate(`/complaints/${id}`)}
-          onStreetView={() => selectedShop && openStreetView(selectedShop.latitude, selectedShop.longitude)}
-        />
+        {selectedShop && (
+          <MapPopup
+            shop={selectedShop}
+            onClose={() => {
+              overlayRef.current?.setPosition(undefined);
+              setSelectedShop(null);
+            }}
+            onViewDetail={(id) => navigate(`/complaints/${id}`)}
+            onStreetView={() => selectedShop && openStreetView(selectedShop.latitude, selectedShop.longitude)}
+          />
+        )}
+        {selectedCustomPoint && (
+          <CustomPointPopup
+            data={selectedCustomPoint}
+            onClose={() => {
+              overlayRef.current?.setPosition(undefined);
+              setSelectedCustomPoint(null);
+            }}
+          />
+        )}
       </div>
 
       {/* ── Mapillary Street View Panel ── */}
@@ -988,192 +1286,369 @@ export default function MapPage() {
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="px-4 py-3 border-b border-slate-700">
-          <div className="flex gap-2">
-            <StatBadge label="Total" value={total} color="#3b82f6" />
-            <StatBadge label="Pending" value={pending} color="#f97316" />
-            <StatBadge label="Resolved" value={resolved} color="#10b981" />
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="px-4 py-3 border-b border-slate-700 space-y-2">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-              <FiFilter size={11} /> Filters
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={loadViolations}
-                disabled={isLoading}
-                className="text-slate-400 hover:text-white transition-colors"
-                title="Refresh"
-              >
-                <FiRefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
-              </button>
-              <button
-                onClick={() => setFilters({ status: '', violation: '', zone: '' })}
-                className="text-xs text-slate-400 hover:text-white transition-colors"
-              >
-                Reset
-              </button>
-            </div>
-          </div>
-
-          {/* Violation Type */}
-          <select
-            value={filters.violation}
-            onChange={(e) => setFilters((f) => ({ ...f, violation: e.target.value }))}
-            className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          >
-            <option value="">All Violation Types</option>
-            {violationTypes.map((v) => (
-              <option key={v} value={v}>{violationLabel(v)}</option>
-            ))}
-          </select>
-
-          {/* Zone */}
-          <select
-            value={filters.zone}
-            onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))}
-            className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          >
-            <option value="">All Zones</option>
-            {zones.map((z) => (
-              <option key={z} value={z}>{zoneLabel(z)}</option>
-            ))}
-          </select>
-
-          {/* Status */}
-          <select
-            value={filters.status}
-            onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-            className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          >
-            <option value="">All Statuses</option>
-            <option value="submitted">Submitted</option>
-            <option value="under_review">Under Review</option>
-            <option value="acknowledged">Acknowledged</option>
-            <option value="resolved">Resolved</option>
-            <option value="closed">Closed</option>
-          </select>
-
-          <p className="text-xs text-slate-500 text-right">
-            {filtered.length} of {violations.length} violations shown
-          </p>
-        </div>
-
-        {/* Toggle list + Street View button */}
-        <div className="mx-4 my-2 flex flex-col gap-2">
+        {/* Sidebar Tab Selection */}
+        <div className="flex border-b border-slate-700 bg-slate-950/40">
           <button
-            onClick={() => setShowList((v) => !v)}
-            className="flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-600 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+            onClick={() => setSidebarTab('violations')}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${sidebarTab === 'violations'
+                ? 'border-blue-500 text-blue-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
           >
-            <FiList size={13} />
-            {showList ? 'Hide Violation List' : 'Show Violation List'}
+            Violations
           </button>
-          {selectedShop && (
-            <button
-              onClick={() => openStreetView(selectedShop.latitude, selectedShop.longitude)}
-              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-xs font-semibold text-white transition-colors"
-            >
-              <FiCamera size={13} />
-              Street View — {selectedShop.title?.replace('Illegal Shop: ', '').split('—')[0].trim()}
-            </button>
-          )}
-          {!MLY_TOKEN && (
-            <p className="text-xs text-amber-400 text-center px-2">
-              ⚠ Add VITE_MAPILLARY_ACCESS_TOKEN to enable street view
-            </p>
-          )}
+          <button
+            onClick={() => setSidebarTab('custom')}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${sidebarTab === 'custom'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            Custom Tabular
+          </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
-              <FiLoader size={26} className="animate-spin text-blue-400" />
-              <p className="text-xs">Loading violations…</p>
+        {sidebarTab === 'violations' && (
+          <>
+            {/* Stats row */}
+            <div className="px-4 py-3 border-b border-slate-700">
+              <div className="flex gap-2">
+                <StatBadge label="Total" value={total} color="#3b82f6" />
+                <StatBadge label="Pending" value={pending} color="#f97316" />
+                <StatBadge label="Resolved" value={resolved} color="#10b981" />
+              </div>
             </div>
-          ) : violations.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400 p-6 text-center">
-              <FiAlertCircle size={32} className="text-slate-600" />
-              <p className="text-sm font-medium text-slate-300">No violations with GPS found</p>
-              <p className="text-xs text-slate-500">
-                Sync KoboToolbox data to populate the map.
+
+            {/* Filters */}
+            <div className="px-4 py-3 border-b border-slate-700 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <FiFilter size={11} /> Filters
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={loadViolations}
+                    disabled={isLoading}
+                    className="text-slate-400 hover:text-white transition-colors"
+                    title="Refresh"
+                  >
+                    <FiRefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+                  </button>
+                  <button
+                    onClick={() => setFilters({ status: '', violation: '', zone: '' })}
+                    className="text-xs text-slate-400 hover:text-white transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* Violation Type */}
+              <select
+                value={filters.violation}
+                onChange={(e) => setFilters((f) => ({ ...f, violation: e.target.value }))}
+                className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">All Violation Types</option>
+                {violationTypes.map((v) => (
+                  <option key={v} value={v}>{violationLabel(v)}</option>
+                ))}
+              </select>
+
+              {/* Zone */}
+              <select
+                value={filters.zone}
+                onChange={(e) => setFilters((f) => ({ ...f, zone: e.target.value }))}
+                className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">All Zones</option>
+                {zones.map((z) => (
+                  <option key={z} value={z}>{zoneLabel(z)}</option>
+                ))}
+              </select>
+
+              {/* Status */}
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+                className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">All Statuses</option>
+                <option value="submitted">Submitted</option>
+                <option value="under_review">Under Review</option>
+                <option value="acknowledged">Acknowledged</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+              </select>
+
+              <p className="text-xs text-slate-500 text-right">
+                {filtered.length} of {violations.length} violations shown
               </p>
             </div>
-          ) : showList ? (
-            <div className="space-y-2 p-3">
-              {filtered.length === 0 ? (
-                <p className="text-center text-xs text-slate-500 py-6">No violations match filters</p>
-              ) : (
-                filtered.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => {
-                      setSelectedShop(c);
-                      setShowList(false);
-                      mapRef.current?.getView().animate({
-                        center: fromLonLat([c.longitude, c.latitude]),
-                        zoom: 15, duration: 600,
-                      });
-                    }}
-                    className="w-full p-3 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-left transition-all group"
-                  >
-                    <div className="flex items-start gap-2">
-                      <div
-                        className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1"
-                        style={{ backgroundColor: violationColor(c.disaster_type) }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-white truncate">
-                          {c.title?.replace('Illegal Shop: ', '') || 'Unknown'}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {violationLabel(c.disaster_type)} · {zoneLabel(c.location_name)}
-                        </p>
-                        <span
-                          className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium capitalize"
-                          style={{
-                            backgroundColor: (STATUS_COLORS[c.status] || '#6b7280') + '33',
-                            color: STATUS_COLORS[c.status] || '#9ca3af',
-                          }}
-                        >
-                          {c.status?.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <FiMapPin size={12} className="text-slate-500 group-hover:text-blue-400 flex-shrink-0 mt-1 transition-colors" />
-                    </div>
-                  </button>
-                ))
+
+            {/* Toggle list + Street View button */}
+            <div className="mx-4 my-2 flex flex-col gap-2">
+              <button
+                onClick={() => setShowList((v) => !v)}
+                className="flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-600 text-xs font-medium text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                <FiList size={13} />
+                {showList ? 'Hide Violation List' : 'Show Violation List'}
+              </button>
+              {selectedShop && (
+                <button
+                  onClick={() => openStreetView(selectedShop.latitude, selectedShop.longitude)}
+                  className="flex items-center justify-center gap-2 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-xs font-semibold text-white transition-colors"
+                >
+                  <FiCamera size={13} />
+                  Street View — {selectedShop.title?.replace('Illegal Shop: ', '').split('—')[0].trim()}
+                </button>
+              )}
+              {!MLY_TOKEN && (
+                <p className="text-xs text-amber-400 text-center px-2">
+                  ⚠ Add VITE_MAPILLARY_ACCESS_TOKEN to enable street view
+                </p>
               )}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 p-6 text-center">
-              <FiMapPin size={28} className="text-slate-600" />
-              <p className="text-sm text-slate-400">Click a marker on the map</p>
-              <p className="text-xs text-slate-600">A popup will show violation details</p>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto border-t border-slate-800">
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
+                  <FiLoader size={26} className="animate-spin text-blue-400" />
+                  <p className="text-xs">Loading violations…</p>
+                </div>
+              ) : violations.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400 p-6 text-center">
+                  <FiAlertCircle size={32} className="text-slate-600" />
+                  <p className="text-sm font-medium text-slate-300">No violations with GPS found</p>
+                  <p className="text-xs text-slate-500">
+                    Sync KoboToolbox data to populate the map.
+                  </p>
+                </div>
+              ) : showList ? (
+                <div className="space-y-2 p-3">
+                  {filtered.length === 0 ? (
+                    <p className="text-center text-xs text-slate-500 py-6">No violations match filters</p>
+                  ) : (
+                    filtered.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedShop(c);
+                          setShowList(false);
+                          mapRef.current?.getView().animate({
+                            center: fromLonLat([c.longitude, c.latitude]),
+                            zoom: 15, duration: 600,
+                          });
+                        }}
+                        className="w-full p-3 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-left transition-all group"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1"
+                            style={{ backgroundColor: violationColor(c.disaster_type) }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-white truncate">
+                              {c.title?.replace('Illegal Shop: ', '') || 'Unknown'}
+                            </p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {violationLabel(c.disaster_type)} · {zoneLabel(c.location_name)}
+                            </p>
+                            <span
+                              className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium capitalize"
+                              style={{
+                                backgroundColor: (STATUS_COLORS[c.status] || '#6b7280') + '33',
+                                color: STATUS_COLORS[c.status] || '#9ca3af',
+                              }}
+                            >
+                              {c.status?.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <FiMapPin size={12} className="text-slate-500 group-hover:text-blue-400 flex-shrink-0 mt-1 transition-colors" />
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 p-6 text-center">
+                  <FiMapPin size={28} className="text-slate-600" />
+                  <p className="text-sm text-slate-400">Click a marker on the map</p>
+                  <p className="text-xs text-slate-600">A popup will show violation details</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Legend */}
-        <div className="p-4 border-t border-slate-700">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-            <FiTag size={11} /> Violation Legend
-          </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-            {Object.entries(VIOLATION_COLORS).filter(([k]) => k !== 'unknown').map(([key, color]) => (
-              <div key={key} className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                <span className="text-xs text-slate-400 truncate">{VIOLATION_LABELS[key]}</span>
+            {/* Legend */}
+            <div className="p-4 border-t border-slate-700">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <FiTag size={11} /> Violation Legend
+              </p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                {Object.entries(VIOLATION_COLORS).filter(([k]) => k !== 'unknown').map(([key, color]) => (
+                  <div key={key} className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-xs text-slate-400 truncate">{VIOLATION_LABELS[key]}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          </>
+        )}
 
-        </div>
+        {sidebarTab === 'custom' && (
+          <div className="flex-1 flex flex-col overflow-auto p-4 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <FiDatabase size={12} /> Select Tabular File
+              </p>
+              {loadingCustomFiles ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                  <FiLoader size={14} className="animate-spin text-indigo-400" />
+                  <span>Loading MinIO files...</span>
+                </div>
+              ) : customFiles.length === 0 ? (
+                <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-center text-xs text-slate-400">
+                  No files found in MinIO custom-data/. Upload files in <strong>Custom Data Upload & view</strong> page first.
+                </div>
+              ) : (
+                <select
+                  value={selectedCustomFile}
+                  onChange={(e) => handleCustomFileChange(e.target.value)}
+                  className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="">-- Choose Excel or CSV file --</option>
+                  {customFiles.map((file) => (
+                    <option key={file.filename} value={file.filename}>
+                      {file.filename} ({(file.size / 1024).toFixed(1)} KB)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {selectedCustomFile && (
+              <div className="space-y-4 bg-slate-800/40 border border-slate-800 rounded-xl p-3.5">
+                {loadingCustomPreview ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 gap-2">
+                    <FiLoader size={20} className="animate-spin text-indigo-400" />
+                    <span className="text-xs">Parsing file structure...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-xs text-slate-300 font-semibold mb-1">Mapping Fields</p>
+                      <p className="text-[10px] text-slate-500 mb-2.5">Select coordinates columns to plot features:</p>
+
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Latitude Column</label>
+                          <select
+                            value={latField}
+                            onChange={(e) => setLatField(e.target.value)}
+                            className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                          >
+                            <option value="">-- Select Latitude --</option>
+                            {customFields.map((f) => (
+                              <option key={f.name} value={f.name}>
+                                {f.name} ({f.type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Longitude Column</label>
+                          <select
+                            value={lonField}
+                            onChange={(e) => setLonField(e.target.value)}
+                            className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                          >
+                            <option value="">-- Select Longitude --</option>
+                            {customFields.map((f) => (
+                              <option key={f.name} value={f.name}>
+                                {f.name} ({f.type})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex flex-col gap-2">
+                      <button
+                        onClick={plotCustomData}
+                        disabled={!latField || !lonField}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold transition-colors shadow-lg shadow-indigo-600/10"
+                      >
+                        <FiCheck size={14} /> Plot on Map
+                      </button>
+
+                      {plottedFiles.some(f => f.filename === selectedCustomFile) && (
+                        <button
+                          onClick={() => deleteCustomPlot(selectedCustomFile)}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-red-500/30 hover:bg-red-950/20 text-red-400 text-xs font-medium transition-colors"
+                        >
+                          <FiX size={14} /> Remove Plot
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Plotted Statistics Summary */}
+            {plottedFiles.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wide px-1">
+                  <span>Plotted Layers ({plottedFiles.length})</span>
+                  <button
+                    onClick={clearAllCustomPlots}
+                    className="text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {plottedFiles.map((file) => (
+                    <div key={file.filename} className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: file.color }} />
+                          <span className="font-bold text-white truncate" title={file.filename}>{file.filename}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => zoomToLayer(file.filename)}
+                            className="text-slate-400 hover:text-white transition-colors"
+                            title="Zoom to layer"
+                          >
+                            <FiZoomIn size={14} />
+                          </button>
+                          <button
+                            onClick={() => deleteCustomPlot(file.filename)}
+                            className="text-slate-400 hover:text-red-400 transition-colors"
+                            title="Delete plot"
+                          >
+                            <FiX size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-400">
+                        <div>Plotted: <span className="font-semibold text-slate-200">{file.success}</span></div>
+                        <div>Skipped: <span className="font-semibold text-slate-500">{file.failed}</span></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
     </div>

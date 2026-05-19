@@ -4,13 +4,14 @@
  * Uses OpenLayers (ol) for map visualization.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { koboApi } from '../services/api';
 import { toast } from 'react-toastify';
 import {
   FiRefreshCw, FiDatabase, FiMapPin, FiCalendar,
   FiAlertTriangle, FiImage, FiDownload, FiFilter, FiExternalLink,
-  FiLoader, FiCloud, FiCheckCircle, FiX, FiFileText,
+  FiLoader, FiCloud, FiCheckCircle, FiX, FiFileText, FiArrowLeft, FiSettings,
 } from 'react-icons/fi';
 
 // OpenLayers imports
@@ -313,6 +314,7 @@ function KoboMap({ submissions }) {
 // ============ Main Page ============
 
 export default function KoboDataPage() {
+  const navigate = useNavigate();
   const [submissions, setSubmissions] = useState([]);
   const [filteredSubmissions, setFilteredSubmissions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -375,6 +377,16 @@ export default function KoboDataPage() {
 
   return (
     <div className="space-y-6">
+      {/* Back Button */}
+      <div>
+        <button
+          onClick={() => navigate('/data-house')}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+        >
+          <FiArrowLeft size={16} /> Back to Data House
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
@@ -384,7 +396,7 @@ export default function KoboDataPage() {
           </h1>
           <p className="text-gray-500 text-sm mt-1">
             Live data from <strong>Illegal Shop Detection &amp; Reporting</strong> survey
-            <span className="ml-2 font-mono text-xs text-gray-400">{settings?.KOBO_ASSET_UID || 'acNYuKP7ZdAigVucAD5eHF'}</span>
+            <span className="ml-2 font-mono text-xs text-gray-400">{import.meta.env.VITE_KOBO_ASSET_UID || 'acNYuKP7ZdAigVucAD5eHF'}</span>
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -429,6 +441,14 @@ export default function KoboDataPage() {
           >
             {isSyncing ? <FiLoader size={14} className="animate-spin" /> : <FiDatabase size={14} />}
             {isSyncing ? 'Syncing...' : 'Sync to Database'}
+          </button>
+          <button
+            onClick={() => navigate('/admin/kobo/manage')}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors"
+            title="Manage Sync Settings"
+          >
+            <FiSettings size={14} />
+            Manage Sync
           </button>
         </div>
       </div>
