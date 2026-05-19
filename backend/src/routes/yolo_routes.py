@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/yolo", tags=["YOLO Detection"])
 
-HARDCODED_MODEL_PATH = "trained_models/telecom_tower_18_may/best.pt"
+HARDCODED_MODEL_PATH = "trained_models/madinah_shop_detection/shop_detection.pt"
 
 # ── In-memory job store ────────────────────────────────────────────────────────
 # { job_id: { status, created_at, files, results, error, conf, iou } }
