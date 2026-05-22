@@ -13,8 +13,20 @@ import {
   FiChevronRight, FiChevronDown, FiHardDrive,
   FiRefreshCw, FiAlertCircle, FiPlay, FiEye,
   FiZap, FiCheckCircle, FiClock, FiFileText, FiLoader,
-  FiGrid, FiList, FiX, FiMaximize2, FiMinimize2, FiZoomIn, FiZoomOut
+  FiGrid, FiList, FiX, FiMaximize2, FiMinimize2, FiZoomIn, FiZoomOut, FiMapPin
 } from 'react-icons/fi';
+import Map from 'ol/Map';
+import View from 'ol/View';
+import TileLayer from 'ol/layer/Tile';
+import XYZ from 'ol/source/XYZ';
+import Feature from 'ol/Feature';
+import { Point } from 'ol/geom';
+import { fromLonLat } from 'ol/proj';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
+import { Style, Circle as CircleStyle, Fill, Stroke } from 'ol/style';
+import 'ol/ol.css';
+
 import YoloDetectionModal from '../components/YoloDetectionModal';
 import { minioApi, ocrApi, customDataApi } from '../services/api';
 
@@ -194,6 +206,71 @@ function OcrStepIndicator({ step, currentStep }) {
     }`}>
       {isDone ? <FiCheckCircle size={14} /> : isActive ? <FiLoader size={14} className="animate-spin" /> : <FiClock size={14} />}
       <span>{step === 1 ? 'Connecting to MinIO' : step === 2 ? 'Reading images' : 'Running Azure OCR'}</span>
+    </div>
+  );
+}
+
+// ─── Simple Map Modal ────────────────────────────────────────────────────────
+function MiniMapModal({ lat, lon, title, onClose }) {
+  const mapRef = useRef(null);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    
+    const safeLat = parseFloat(lat) || 0;
+    const safeLon = parseFloat(lon) || 0;
+
+    const point = new Feature({
+      geometry: new Point(fromLonLat([safeLon, safeLat]))
+    });
+    
+    point.setStyle(new Style({
+      image: new CircleStyle({
+        radius: 8,
+        fill: new Fill({ color: '#ef4444' }),
+        stroke: new Stroke({ color: '#ffffff', width: 2 })
+      })
+    }));
+
+    const vectorLayer = new VectorLayer({
+      source: new VectorSource({ features: [point] }),
+      zIndex: 10
+    });
+
+    const basemap = new TileLayer({
+      source: new XYZ({ url: 'https://{a-c}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png' })
+    });
+
+    const map = new Map({
+      target: mapRef.current,
+      layers: [basemap, vectorLayer],
+      view: new View({
+        center: fromLonLat([safeLon, safeLat]),
+        zoom: 18
+      })
+    });
+
+    // Fix for OL map rendered inside a modal that hasn't fully painted
+    setTimeout(() => {
+      if (map) map.updateSize();
+    }, 200);
+
+    return () => map.setTarget(null);
+  }, [lat, lon]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col">
+        <div className="px-4 py-3 bg-slate-900 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <FiMapPin className="text-red-400" />
+            <span className="font-semibold text-sm">{title || 'Location'}</span>
+            <span className="text-xs text-slate-400 ml-2">({lat}, {lon})</span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><FiX size={18} /></button>
+        </div>
+        <div ref={mapRef} className="w-full h-[65vh] bg-gray-100" />
+      </div>
     </div>
   );
 }
@@ -465,6 +542,7 @@ export default function AiLabPage() {
   const [dataMatches, setDataMatches] = useState([]);
   const [matchingData, setMatchingData] = useState(false);
   const [matchError, setMatchError] = useState(null);
+  const [mapLocation, setMapLocation] = useState(null);
 
   // ── Fetch folder tree ──
   const fetchData = useCallback(async (silent = false) => {
@@ -1092,20 +1170,66 @@ export default function AiLabPage() {
                   <p className="bg-white p-2 border border-gray-200 rounded text-xs font-arabic mb-4" dir="auto">{match.ocr_text}</p>
                   <p className="font-semibold mb-2">Matched Excel Data:</p>
                   <div className="space-y-2">
-                    {match.matched_rows.map((row, rIdx) => (
-                      <div key={rIdx} className="bg-white p-3 border border-gray-200 rounded overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <tbody>
-                            {Object.entries(row).map(([k, v], cIdx) => (
-                              <tr key={cIdx} className="border-b last:border-0 border-gray-100">
-                                <th className="py-1 pr-4 text-gray-500 font-medium whitespace-nowrap">{k}</th>
-                                <td className="py-1 font-arabic" dir="auto">{v}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ))}
+                    {match.matched_rows.map((row, rIdx) => {
+                      const dateStr = row['Permit End Date (Gregorian)'] || row['License Expiry Date'];
+                      let isExpired = false;
+                      if (dateStr) {
+                        const endDate = new Date(dateStr);
+                        if (!isNaN(endDate.getTime())) {
+                          isExpired = endDate < new Date();
+                        }
+                      }
+                      
+                      const lat = row['Latitude (Y)'] || row['lat'] || row['latitude'];
+                      const lon = row['Longitude (X)'] || row['lon'] || row['longitude'];
+                      const hasLocation = lat && lon;
+
+                      return (
+                        <div key={rIdx} className={`bg-white p-3 border rounded overflow-x-auto relative ${isExpired ? 'border-red-400 ring-1 ring-red-100' : 'border-gray-200'}`}>
+                          
+                          {/* Expiry Badge & Map Button Toolbar */}
+                          <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
+                            <div>
+                              {isExpired ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold bg-red-100 text-red-700 px-2.5 py-1 rounded-full">
+                                  <FiAlertCircle /> Permit Expired ({dateStr})
+                                </span>
+                              ) : dateStr ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold bg-green-100 text-green-700 px-2.5 py-1 rounded-full">
+                                  <FiCheckCircle /> Valid Permit ({dateStr})
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">No expiry date found</span>
+                              )}
+                            </div>
+                            
+                            {hasLocation && (
+                              <button
+                                onClick={() => setMapLocation({ lat: parseFloat(lat), lon: parseFloat(lon), title: row['Shop Name'] || 'Shop Location' })}
+                                className="inline-flex items-center gap-1 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors border border-blue-200"
+                              >
+                                <FiMapPin size={12} /> View on Map
+                              </button>
+                            )}
+                          </div>
+
+                          <table className="w-full text-xs text-left">
+                            <tbody>
+                              {Object.entries(row).map(([k, v], cIdx) => (
+                                <tr key={cIdx} className="border-b last:border-0 border-gray-100">
+                                  <th className={`py-1.5 pr-4 font-medium whitespace-nowrap ${isExpired && (k === 'Permit End Date (Gregorian)' || k === 'License Expiry Date') ? 'text-red-600' : 'text-gray-500'}`}>
+                                    {k}
+                                  </th>
+                                  <td className={`py-1.5 font-arabic ${isExpired && (k === 'Permit End Date (Gregorian)' || k === 'License Expiry Date') ? 'text-red-700 font-bold' : ''}`} dir="auto">
+                                    {v}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

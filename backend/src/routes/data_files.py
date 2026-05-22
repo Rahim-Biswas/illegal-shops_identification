@@ -274,34 +274,114 @@ async def search_ocr_texts(payload: dict):
                 
             # Convert all columns to string for easy searching
             import numpy as np
+            import difflib
+            
             df_str = df.replace([np.inf, -np.inf], np.nan).fillna("").astype(str)
             
+            # Find the target column for "Shop Name"
+            shop_col = None
+            target_keywords = ['shop name', 'اسم المحل', 'اسم المركز', 'shop', 'محل', 'name', 'اسم']
+            
+            # First pass: try exact matches
+            for col in df_str.columns:
+                lower_col = str(col).lower().strip()
+                if lower_col in target_keywords:
+                    shop_col = col
+                    break
+                    
+            # Second pass: try substring matches in order of specificity
+            if not shop_col:
+                for kw in target_keywords:
+                    for col in df_str.columns:
+                        lower_col = str(col).lower().strip()
+                        if kw in lower_col:
+                            shop_col = col
+                            break
+                    if shop_col:
+                        break
+            
+            # Requirement: If no 'Shop Name' column, skip this file entirely.
+            if not shop_col:
+                continue
+                
+            def calc_similarity(s1, s2):
+                if not s1 or not s2: return 0.0
+                # Direct match
+                if s1 in s2 or s2 in s1: return 1.0
+                
+                import re
+                # Token match (intersection) after removing punctuation
+                clean_s1 = re.sub(r'[^\w\s]', '', s1)
+                clean_s2 = re.sub(r'[^\w\s]', '', s2)
+                tok1, tok2 = set(clean_s1.split()), set(clean_s2.split())
+                
+                tok_sim = 0.0
+                if tok1 and tok2:
+                    inter = tok1.intersection(tok2)
+                    # Use min len so if smaller string is fully contained, it's 1.0
+                    tok_sim = len(inter) / min(len(tok1), len(tok2))
+                    if tok_sim >= 0.5:
+                        return max(tok_sim, 0.65) # At least half the words match -> trigger success
+                
+                # Sequence match for slight misspellings, but avoid very long O(N^2)
+                l1, l2 = len(s1), len(s2)
+                if l1 < 100 and l2 < 100:
+                    seq_sim = difflib.SequenceMatcher(None, s1, s2).ratio()
+                    return max(seq_sim, tok_sim)
+                
+                return tok_sim
+
+            # Get unique shop names and their row indices to avoid duplicate calculations
+            unique_shop_names = {}
+            for idx, row in df_str.iterrows():
+                val = row[shop_col].strip()
+                if len(val) > 2:
+                    if val not in unique_shop_names:
+                        unique_shop_names[val] = []
+                    unique_shop_names[val].append(row.to_dict())
+            
+            # Pre-calculate lowercase and clean OCR lines
+            parsed_ocr = []
             for ocr_res in ocr_results:
                 ocr_text = (ocr_res.get("text") or "").strip()
-                if not ocr_text:
-                    continue
+                if not ocr_text: continue
                 
-                # Split OCR text into words/lines or search as a whole.
-                # Since OCR can contain multiple lines, we can check if any cell value is in OCR text 
-                # or if OCR text is in cell value. 
-                # We'll do a simple check: if a cell value (length > 3) is a substring of OCR text, it's a match.
-                
+                lines = ocr_res.get("lines", [])
+                if lines:
+                    ocr_lines = [l.get("text", "").lower().strip() for l in lines if len(l.get("text", "").strip()) > 2]
+                else:
+                    ocr_lines = [ocr_text.lower()]
+                    
+                parsed_ocr.append({
+                    "res": ocr_res,
+                    "text": ocr_text.lower(),
+                    "lines": ocr_lines
+                })
+
+            for p_ocr in parsed_ocr:
                 matched_rows = []
-                for idx, row in df_str.iterrows():
+                
+                for shop_val, rows in unique_shop_names.items():
+                    shop_val_lower = shop_val.lower()
                     row_matched = False
-                    for col in df_str.columns:
-                        cell_val = row[col].strip()
-                        if len(cell_val) > 3 and (cell_val in ocr_text or ocr_text in cell_val):
-                            row_matched = True
-                            break
+                    
+                    # 1. Similarity Match with the entire OCR text
+                    if calc_similarity(shop_val_lower, p_ocr["text"]) > 0.60:
+                        row_matched = True
+                    else:
+                        # 2. Similarity Match with each OCR line
+                        for line in p_ocr["lines"]:
+                            if calc_similarity(shop_val_lower, line) > 0.60:
+                                row_matched = True
+                                break
                     
                     if row_matched:
-                        matched_rows.append(row.to_dict())
+                        matched_rows.extend(rows)
                 
                 if matched_rows:
                     all_matches.append({
-                        "image_name": ocr_res.get("name"),
-                        "ocr_text": ocr_text,
+                        "image_name": p_ocr["res"].get("name"),
+                        "ocr_text": p_ocr["res"].get("text"),
                         "matched_file": filename,
                         "matched_rows": matched_rows
                     })
