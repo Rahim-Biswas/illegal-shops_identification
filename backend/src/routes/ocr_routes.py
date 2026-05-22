@@ -69,11 +69,21 @@ async def ocr_folder(payload: dict):
             resp.release_conn()
             ocr_res = _azure_ocr(img_bytes)
             text = ""
+            lines = []
             if "readResult" in ocr_res:
                 for block in ocr_res["readResult"]["blocks"]:
                     for line in block["lines"]:
                         text += line["text"] + "\n"
-            results.append({"name": obj.object_name[len(prefix):], "text": text.strip()})
+                        line_entry = {"text": line["text"]}
+                        if "boundingPolygon" in line:
+                            line_entry["boundingPolygon"] = line["boundingPolygon"]
+                        lines.append(line_entry)
+            results.append({
+                "name": obj.object_name[len(prefix):],
+                "full_key": obj.object_name,
+                "text": text.strip(),
+                "lines": lines,
+            })
         return JSONResponse(content={"folder": folder, "results": results})
     except S3Error as exc:
         logger.error("MinIO S3Error in OCR folder %s: %s", folder, exc)

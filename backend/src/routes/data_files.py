@@ -232,3 +232,83 @@ async def preview_custom_file(filename: str, limit: int = 20):
     except Exception as e:
         logger.error("Unexpected error previewing file %s: %s", filename, e)
         raise HTTPException(status_code=500, detail=f"Error previewing file: {str(e)}")
+
+@router.post("/search-ocr")
+async def search_ocr_texts(payload: dict):
+    """
+    Search for OCR extracted texts in all custom uploaded Excel/CSV files.
+    Expects payload: {"ocr_results": [{"name": "image.jpg", "text": "extracted text"}]}
+    Returns matches with details.
+    """
+    ocr_results = payload.get("ocr_results", [])
+    if not ocr_results:
+        return {"matches": []}
+
+    try:
+        client = _get_client()
+        _ensure_bucket(client)
+        
+        prefix = "custom-data/"
+        objects = client.list_objects(settings.MINIO_BUCKET, prefix=prefix, recursive=True)
+        
+        all_matches = []
+        
+        # We will load each file and search
+        for obj in objects:
+            if obj.is_dir or obj.object_name.endswith(".keep"):
+                continue
+            
+            filename = obj.object_name[len(prefix):]
+            if not filename:
+                continue
+                
+            response = client.get_object(settings.MINIO_BUCKET, obj.object_name)
+            content = response.read()
+            response.close()
+            response.release_conn()
+            
+            if filename.endswith('.csv'):
+                df = pd.read_csv(io.BytesIO(content))
+            else:
+                df = pd.read_excel(io.BytesIO(content))
+                
+            # Convert all columns to string for easy searching
+            import numpy as np
+            df_str = df.replace([np.inf, -np.inf], np.nan).fillna("").astype(str)
+            
+            for ocr_res in ocr_results:
+                ocr_text = (ocr_res.get("text") or "").strip()
+                if not ocr_text:
+                    continue
+                
+                # Split OCR text into words/lines or search as a whole.
+                # Since OCR can contain multiple lines, we can check if any cell value is in OCR text 
+                # or if OCR text is in cell value. 
+                # We'll do a simple check: if a cell value (length > 3) is a substring of OCR text, it's a match.
+                
+                matched_rows = []
+                for idx, row in df_str.iterrows():
+                    row_matched = False
+                    for col in df_str.columns:
+                        cell_val = row[col].strip()
+                        if len(cell_val) > 3 and (cell_val in ocr_text or ocr_text in cell_val):
+                            row_matched = True
+                            break
+                    
+                    if row_matched:
+                        matched_rows.append(row.to_dict())
+                
+                if matched_rows:
+                    all_matches.append({
+                        "image_name": ocr_res.get("name"),
+                        "ocr_text": ocr_text,
+                        "matched_file": filename,
+                        "matched_rows": matched_rows
+                    })
+                    
+        return {"matches": all_matches, "status": "success"}
+        
+    except Exception as e:
+        logger.error("Error searching custom files: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+

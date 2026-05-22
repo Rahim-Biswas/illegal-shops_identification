@@ -12,10 +12,11 @@ import {
   FiFolder, FiFolderMinus, FiFilm, FiImage as FiImageIcon, FiFile,
   FiChevronRight, FiChevronDown, FiHardDrive,
   FiRefreshCw, FiAlertCircle, FiPlay, FiEye,
-  FiZap, FiCheckCircle, FiClock, FiFileText, FiLoader
+  FiZap, FiCheckCircle, FiClock, FiFileText, FiLoader,
+  FiGrid, FiList, FiX, FiMaximize2, FiMinimize2, FiZoomIn, FiZoomOut
 } from 'react-icons/fi';
 import YoloDetectionModal from '../components/YoloDetectionModal';
-import { minioApi, ocrApi } from '../services/api';
+import { minioApi, ocrApi, customDataApi } from '../services/api';
 
 // ─── Palette for top-level folder cards ───────────────────────────────────────
 const PALETTE = [
@@ -44,6 +45,18 @@ function fileIconType(name = '') {
   if (['jpg','jpeg','png','webp','tiff','bmp','gif'].includes(ext)) return 'image';
   return 'file';
 }
+
+// ─── Bounding box colors ─────────────────────────────────────────────────────
+const BBOX_COLORS = [
+  'rgba(99, 102, 241, 0.85)',   // indigo
+  'rgba(16, 185, 129, 0.85)',   // emerald
+  'rgba(245, 158, 11, 0.85)',   // amber
+  'rgba(239, 68, 68, 0.85)',    // red
+  'rgba(139, 92, 246, 0.85)',   // violet
+  'rgba(6, 182, 212, 0.85)',    // cyan
+  'rgba(236, 72, 153, 0.85)',   // pink
+  'rgba(34, 197, 94, 0.85)',    // green
+];
 
 // ─── File row ─────────────────────────────────────────────────────────────────
 function FileRow({ file, indent }) {
@@ -185,6 +198,243 @@ function OcrStepIndicator({ step, currentStep }) {
   );
 }
 
+// ─── Image Viewer with Bounding Boxes (Modal) ─────────────────────────────────
+function OcrImageViewerModal({ result, onClose }) {
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const containerRef = useRef(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const [showBoxes, setShowBoxes] = useState(true);
+  const [hoveredLine, setHoveredLine] = useState(null);
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+
+  const imgUrl = result.full_key ? minioApi.getStreamUrl(result.full_key) : null;
+  const lines = result.lines || [];
+
+  // Draw bounding boxes on canvas overlay
+  useEffect(() => {
+    if (!imgLoaded || !canvasRef.current || !imgRef.current) return;
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    const ctx = canvas.getContext('2d');
+
+    // Match canvas to displayed image size
+    const rect = img.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!showBoxes || lines.length === 0) return;
+
+    const scaleX = rect.width / naturalSize.w;
+    const scaleY = rect.height / naturalSize.h;
+
+    lines.forEach((line, idx) => {
+      if (!line.boundingPolygon || line.boundingPolygon.length < 3) return;
+
+      const color = BBOX_COLORS[idx % BBOX_COLORS.length];
+      const isHovered = hoveredLine === idx;
+
+      ctx.beginPath();
+      const points = line.boundingPolygon;
+      ctx.moveTo(points[0].x * scaleX, points[0].y * scaleY);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x * scaleX, points[i].y * scaleY);
+      }
+      ctx.closePath();
+
+      // Fill
+      ctx.fillStyle = isHovered
+        ? color.replace(/[\d.]+\)$/, '0.25)')
+        : color.replace(/[\d.]+\)$/, '0.12)');
+      ctx.fill();
+
+      // Stroke
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isHovered ? 3 : 2;
+      ctx.stroke();
+
+      // Label
+      if (isHovered) {
+        const labelX = points[0].x * scaleX;
+        const labelY = points[0].y * scaleY - 6;
+        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+        const textMetrics = ctx.measureText(line.text);
+        const pad = 4;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(labelX - pad, labelY - 14, textMetrics.width + pad * 2, 18, 4);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(line.text, labelX, labelY);
+      }
+    });
+  }, [imgLoaded, showBoxes, hoveredLine, lines, naturalSize]);
+
+  // Resize handler
+  useEffect(() => {
+    if (!imgLoaded) return;
+    const handleResize = () => {
+      if (!imgRef.current || !canvasRef.current) return;
+      const rect = imgRef.current.getBoundingClientRect();
+      canvasRef.current.width = rect.width;
+      canvasRef.current.height = rect.height;
+      // Trigger redraw by toggling
+      setHoveredLine(prev => prev);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [imgLoaded]);
+
+  const handleImgLoad = (e) => {
+    setNaturalSize({ w: e.target.naturalWidth, h: e.target.naturalHeight });
+    setImgLoaded(true);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div
+          className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0"
+          style={{ background: 'linear-gradient(to right, #1e293b, #0f172a)' }}
+        >
+          <div className="flex items-center gap-3 text-white min-w-0">
+            <FiEye size={18} className="text-blue-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <h3 className="font-bold text-base truncate">{result.name}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {lines.length} text region{lines.length !== 1 ? 's' : ''} detected
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowBoxes(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                showBoxes
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-400/30'
+                  : 'bg-gray-600/40 text-gray-400 border border-gray-500/30'
+              }`}
+            >
+              <FiEye size={12} />
+              {showBoxes ? 'Hide Boxes' : 'Show Boxes'}
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors ml-2">
+              <FiX size={22} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Image with canvas overlay */}
+          <div className="flex-1 bg-gray-900 flex items-center justify-center relative overflow-auto p-4" ref={containerRef}>
+            {imgUrl ? (
+              <>
+                {!imgLoaded && !imgError && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <FiLoader size={32} className="text-gray-500 animate-spin" />
+                  </div>
+                )}
+                {imgError && (
+                  <div className="flex flex-col items-center gap-3 text-gray-400">
+                    <FiAlertCircle size={48} />
+                    <p className="text-sm">Failed to load image</p>
+                  </div>
+                )}
+                <div className="relative inline-block">
+                  <img
+                    ref={imgRef}
+                    src={imgUrl}
+                    alt={result.name}
+                    className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                    style={{ display: imgLoaded ? 'block' : 'none' }}
+                    onLoad={handleImgLoad}
+                    onError={() => setImgError(true)}
+                    crossOrigin="anonymous"
+                  />
+                  {imgLoaded && (
+                    <canvas
+                      ref={canvasRef}
+                      className="absolute top-0 left-0 pointer-events-none rounded-lg"
+                      style={{ pointerEvents: showBoxes ? 'auto' : 'none' }}
+                    />
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-3 text-gray-400">
+                <FiImageIcon size={48} />
+                <p className="text-sm">No image URL available</p>
+              </div>
+            )}
+          </div>
+
+          {/* Detected text lines sidebar */}
+          <div className="w-80 border-l border-gray-200 bg-white flex flex-col flex-shrink-0">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
+              <h4 className="font-semibold text-sm text-gray-800">Detected Text Lines</h4>
+              <p className="text-xs text-gray-400 mt-0.5">Hover to highlight on image</p>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {lines.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+                  <FiFileText size={28} className="mb-2 opacity-50" />
+                  <p className="text-sm">No text detected</p>
+                </div>
+              ) : (
+                <div className="p-2 space-y-1">
+                  {lines.map((line, idx) => {
+                    const color = BBOX_COLORS[idx % BBOX_COLORS.length];
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all ${
+                          hoveredLine === idx
+                            ? 'bg-indigo-50 ring-1 ring-indigo-200 shadow-sm'
+                            : 'hover:bg-gray-50'
+                        }`}
+                        onMouseEnter={() => setHoveredLine(idx)}
+                        onMouseLeave={() => setHoveredLine(null)}
+                      >
+                        <div
+                          className="w-3 h-3 rounded-sm flex-shrink-0 mt-1"
+                          style={{ backgroundColor: color }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-gray-800 leading-relaxed break-words font-medium" dir="auto">
+                            {line.text}
+                          </p>
+                          {line.boundingPolygon && (
+                            <p className="text-[10px] text-gray-400 mt-0.5 font-mono">
+                              {line.boundingPolygon.length} points
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 mt-1">
+                          #{idx + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  MAIN PAGE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -207,6 +457,14 @@ export default function AiLabPage() {
   // ── Section 3: Results state ──
   const [ocrResults, setOcrResults]   = useState([]);
   const [expandedResult, setExpandedResult] = useState(null);
+  const [resultView, setResultView]   = useState('cards'); // 'cards' or 'table'
+  const [viewerResult, setViewerResult] = useState(null);  // modal image viewer
+  const [tableSearch, setTableSearch] = useState('');
+
+  // ── Section 4: Data Matches state ──
+  const [dataMatches, setDataMatches] = useState([]);
+  const [matchingData, setMatchingData] = useState(false);
+  const [matchError, setMatchError] = useState(null);
 
   // ── Fetch folder tree ──
   const fetchData = useCallback(async (silent = false) => {
@@ -257,6 +515,30 @@ export default function AiLabPage() {
       setOcrLoading(false);
     }
   };
+
+  // ── Search OCR in Custom Data ──
+  const handleSearchData = async () => {
+    if (!ocrResults.length) return;
+    setMatchingData(true);
+    setMatchError(null);
+    try {
+      const res = await customDataApi.searchOcr(ocrResults);
+      setDataMatches(res.data.matches || []);
+    } catch (err) {
+      setMatchError(err.response?.data?.detail || err.message || 'Failed to search data files.');
+    } finally {
+      setMatchingData(false);
+    }
+  };
+
+
+
+  // ── Filtered table results ──
+  const filteredTableResults = ocrResults.filter(r => {
+    if (!tableSearch) return true;
+    const q = tableSearch.toLowerCase();
+    return r.name.toLowerCase().includes(q) || (r.text || '').toLowerCase().includes(q);
+  });
 
   return (
     <div className="space-y-6">
@@ -481,11 +763,38 @@ export default function AiLabPage() {
               <p className="text-sm text-gray-500">OCR-extracted text from shop sign images</p>
             </div>
           </div>
-          {ocrResults.length > 0 && (
-            <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full">
-              {ocrResults.length} image{ocrResults.length !== 1 ? 's' : ''} processed
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {ocrResults.length > 0 && (
+              <>
+                {/* View toggle */}
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setResultView('cards')}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      resultView === 'cards'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <FiGrid size={12} /> Cards
+                  </button>
+                  <button
+                    onClick={() => setResultView('table')}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      resultView === 'table'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <FiList size={12} /> Table
+                  </button>
+                </div>
+                <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full">
+                  {ocrResults.length} image{ocrResults.length !== 1 ? 's' : ''} processed
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         {ocrResults.length === 0 ? (
@@ -494,11 +803,14 @@ export default function AiLabPage() {
             <p className="text-gray-500 font-medium">No OCR results yet</p>
             <p className="text-gray-400 text-sm mt-1">Run the OCR process above to see extracted text here.</p>
           </div>
-        ) : (
+        ) : resultView === 'cards' ? (
+          /* ── CARD VIEW ── */
           <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
             {ocrResults.map((r, i) => {
               const isExpanded = expandedResult === i;
               const hasText = r.text && r.text.trim().length > 0;
+              const hasLines = r.lines && r.lines.length > 0;
+              const imgUrl = r.full_key ? minioApi.getStreamUrl(r.full_key) : null;
               return (
                 <div
                   key={i}
@@ -520,6 +832,11 @@ export default function AiLabPage() {
                       : <FiChevronRight size={14} className="text-gray-400 flex-shrink-0" />}
                     <FiImageIcon size={15} className={hasText ? 'text-emerald-500' : 'text-amber-500'} />
                     <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{r.name}</span>
+                    {hasLines && (
+                      <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full mr-1">
+                        {r.lines.length} region{r.lines.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
                     {hasText ? (
                       <span className="text-xs font-medium bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
                         Text found
@@ -531,24 +848,279 @@ export default function AiLabPage() {
                     )}
                   </div>
 
-                  {/* Expanded text content */}
+                  {/* Expanded content */}
                   {isExpanded && (
-                    <div className="border-t border-gray-100 bg-white px-4 py-3">
-                      {hasText ? (
-                        <pre className="text-sm text-gray-800 whitespace-pre-wrap font-arabic leading-relaxed bg-gray-50 rounded-lg p-3 border border-gray-100">
-                          {r.text}
-                        </pre>
-                      ) : (
-                        <p className="text-sm text-gray-400 italic">No readable text was extracted from this image.</p>
-                      )}
+                    <div className="border-t border-gray-100 bg-white">
+                      {/* Image preview with bounding box view button */}
+                      <div className="flex flex-col md:flex-row gap-0">
+                        {/* Image thumbnail */}
+                        {imgUrl && (
+                          <div className="md:w-72 flex-shrink-0 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-100 p-3">
+                            <div className="relative group rounded-xl overflow-hidden bg-gray-900">
+                              <img
+                                src={imgUrl}
+                                alt={r.name}
+                                className="w-full h-48 object-contain"
+                                crossOrigin="anonymous"
+                              />
+                              <div
+                                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                                onClick={(e) => { e.stopPropagation(); setViewerResult(r); }}
+                              >
+                                <div className="bg-white text-gray-900 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-lg">
+                                  <FiMaximize2 size={14} />
+                                  View with Bounding Boxes
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setViewerResult(r); }}
+                              className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                            >
+                              <FiEye size={12} /> View Bounding Boxes
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Text content */}
+                        <div className="flex-1 p-4">
+                          {hasText ? (
+                            <pre className="text-sm text-gray-800 whitespace-pre-wrap font-arabic leading-relaxed bg-gray-50 rounded-lg p-3 border border-gray-100" dir="auto">
+                              {r.text}
+                            </pre>
+                          ) : (
+                            <p className="text-sm text-gray-400 italic">No readable text was extracted from this image.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+        ) : (
+          /* ── TABLE VIEW ── */
+          <div>
+            {/* Table search */}
+            <div className="mb-4">
+              <div className="relative">
+                <FiSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={tableSearch}
+                  onChange={e => setTableSearch(e.target.value)}
+                  placeholder="Search results by image name or text..."
+                  className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gradient-to-r from-gray-50 to-gray-100">
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider w-10">#</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Image</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Image Name</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Extracted Text</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Regions</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Status</th>
+                    <th className="text-center px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredTableResults.map((r, i) => {
+                    const hasText = r.text && r.text.trim().length > 0;
+                    const lineCount = r.lines?.length || 0;
+                    const imgUrl = r.full_key ? minioApi.getStreamUrl(r.full_key) : null;
+                    return (
+                      <tr key={i} className="hover:bg-gray-50/60 transition-colors group">
+                        <td className="px-4 py-3 text-gray-400 font-mono text-xs">{i + 1}</td>
+                        <td className="px-4 py-3">
+                          {imgUrl ? (
+                            <div
+                              className="w-16 h-12 rounded-lg overflow-hidden bg-gray-100 border border-gray-200 cursor-pointer hover:ring-2 hover:ring-indigo-300 transition-all flex-shrink-0"
+                              onClick={() => setViewerResult(r)}
+                            >
+                              <img
+                                src={imgUrl}
+                                alt={r.name}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-16 h-12 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center">
+                              <FiImageIcon size={16} className="text-gray-300" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-gray-900 text-sm truncate max-w-[200px]" title={r.name}>
+                            {r.name}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-gray-700 text-sm line-clamp-2 max-w-md leading-relaxed" dir="auto" title={r.text}>
+                            {hasText ? r.text : <span className="text-gray-400 italic">No text detected</span>}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                            lineCount > 0
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-400'
+                          }`}>
+                            {lineCount}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {hasText ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
+                              <FiCheckCircle size={10} /> Found
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">
+                              <FiAlertCircle size={10} /> Empty
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => setViewerResult(r)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <FiEye size={11} /> View
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {filteredTableResults.length === 0 && (
+                <div className="p-8 text-center">
+                  <FiSearch size={24} className="text-gray-200 mx-auto mb-2" />
+                  <p className="text-gray-400 text-sm">No results match "<span className="font-semibold">{tableSearch}</span>"</p>
+                </div>
+              )}
+            </div>
+
+            {/* Table footer summary */}
+            <div className="flex items-center justify-between mt-3 px-1">
+              <p className="text-xs text-gray-400">
+                Showing {filteredTableResults.length} of {ocrResults.length} results
+              </p>
+              <div className="flex items-center gap-4 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  {ocrResults.filter(r => r.text && r.text.trim()).length} with text
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  {ocrResults.filter(r => !r.text || !r.text.trim()).length} empty
+                </span>
+              </div>
+            </div>
+          </div>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECTION 4 — DATA MATCHES
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center shadow"
+              style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}
+            >
+              <FiSearch size={16} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Custom Data Matches</h2>
+              <p className="text-sm text-gray-500">Cross-reference OCR results with uploaded Excel files</p>
+            </div>
+          </div>
+          <button
+            onClick={handleSearchData}
+            disabled={matchingData || ocrResults.length === 0}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white shadow hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}
+          >
+            {matchingData ? (
+              <><FiLoader size={14} className="animate-spin" /> Searching...</>
+            ) : (
+              <><FiSearch size={14} /> Search Excel Files</>
+            )}
+          </button>
+        </div>
+
+        {matchError && (
+          <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 mb-4">
+            <FiAlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Search Failed</p>
+              <p className="text-red-400 text-xs mt-0.5">{matchError}</p>
+            </div>
+          </div>
+        )}
+
+        {dataMatches.length === 0 ? (
+          <div className="bg-gray-50 rounded-2xl border border-gray-100 p-8 text-center">
+            <FiHardDrive size={32} className="text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">No matches found</p>
+            <p className="text-gray-400 text-sm mt-1">Run OCR first, then click Search Excel Files.</p>
+          </div>
+        ) : (
+          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+            {dataMatches.map((match, idx) => (
+              <div key={idx} className="border border-amber-100 rounded-xl bg-white overflow-hidden shadow-sm">
+                <div className="bg-amber-50 px-4 py-3 flex items-center justify-between border-b border-amber-100">
+                  <div className="flex items-center gap-2">
+                    <FiFileText className="text-amber-600" />
+                    <span className="font-semibold text-gray-900 text-sm">{match.image_name}</span>
+                  </div>
+                  <span className="text-xs bg-amber-200 text-amber-800 px-2 py-1 rounded font-medium">
+                    Found in {match.matched_file}
+                  </span>
+                </div>
+                <div className="p-4 bg-gray-50 text-sm text-gray-700">
+                  <p className="font-semibold mb-2">OCR Text:</p>
+                  <p className="bg-white p-2 border border-gray-200 rounded text-xs font-arabic mb-4" dir="auto">{match.ocr_text}</p>
+                  <p className="font-semibold mb-2">Matched Excel Data:</p>
+                  <div className="space-y-2">
+                    {match.matched_rows.map((row, rIdx) => (
+                      <div key={rIdx} className="bg-white p-3 border border-gray-200 rounded overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <tbody>
+                            {Object.entries(row).map(([k, v], cIdx) => (
+                              <tr key={cIdx} className="border-b last:border-0 border-gray-100">
+                                <th className="py-1 pr-4 text-gray-500 font-medium whitespace-nowrap">{k}</th>
+                                <td className="py-1 font-arabic" dir="auto">{v}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Image Viewer Modal ── */}
+      {viewerResult && (
+        <OcrImageViewerModal
+          result={viewerResult}
+          onClose={() => setViewerResult(null)}
+        />
+      )}
 
       {/* ── YOLO Modal ── */}
       {showYoloModal && (

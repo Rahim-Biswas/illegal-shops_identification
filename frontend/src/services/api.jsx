@@ -182,6 +182,7 @@ export const customDataApi = {
   previewFile: (filename, limit = 20) =>
     api.get(`/data-files/preview/${encodeURIComponent(filename)}`, { params: { limit } }),
   deleteFile: (filename) => api.delete(`/minio/folders/custom-data/${encodeURIComponent(filename)}`),
+  searchOcr: (ocrResults) => api.post('/data-files/search-ocr', { ocr_results: ocrResults }),
 };
 
 // ============= OCR APIs =============
