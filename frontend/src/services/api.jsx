@@ -110,6 +110,9 @@ export const minioApi = {
   /** Subtree for a specific folder */
   listFolder: (folder) => api.get(`/minio/folders/${folder}`),
 
+  /** Get GPS coordinates of all images in a specific folder */
+  getFolderGps: (folder) => api.get(`/minio/folder-gps/${folder}`),
+
   /** Upload files (FormData with `files` field) into a folder path */
   uploadFiles: (folderPath, formData) =>
     api.post(`/minio/folders/${folderPath}`, formData, {
@@ -179,6 +182,14 @@ export const customDataApi = {
   previewFile: (filename, limit = 20) =>
     api.get(`/data-files/preview/${encodeURIComponent(filename)}`, { params: { limit } }),
   deleteFile: (filename) => api.delete(`/minio/folders/custom-data/${encodeURIComponent(filename)}`),
+};
+
+// ============= OCR APIs =============
+
+export const ocrApi = {
+  /** Run OCR on all images in a MinIO folder */
+  runFolderOcr: (folderPath) =>
+    api.post('/ocr/folder', { folder: folderPath }),
 };
 
 export default api;

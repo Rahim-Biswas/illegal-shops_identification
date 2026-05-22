@@ -11,7 +11,7 @@ from src.config import settings
 from src.database import init_db, get_db
 from src.routes import auth, users, complaints
 from src.routes import kobo
-from src.routes import minio_routes
+from src.routes import minio_routes, ocr_routes
 from src.routes import yolo_routes
 from src.routes import data_files
 import httpx
@@ -211,6 +211,7 @@ app.include_router(users.router)
 app.include_router(complaints.router)
 app.include_router(kobo.router)
 app.include_router(minio_routes.router)
+app.include_router(ocr_routes.router)
 app.include_router(yolo_routes.router)
 app.include_router(data_files.router)
 

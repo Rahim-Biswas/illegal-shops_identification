@@ -1,151 +1,269 @@
 /**
  * AI Lab Page — Illegal Shop AI Detection Platform
- * Proper page replacing the old modal.
+ * Three-section layout:
+ *   1) Folder Explorer  (reuses MinIO tree from StreetExplorer pattern)
+ *   2) OCR Process      (trigger Azure OCR on selected folder)
+ *   3) Results           (display extracted text per image)
  * Keeps the "Open AI Lab Platform" external link to https://aces.logicity.in/
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  FiCpu, FiCamera, FiSearch, FiDatabase, FiTag, FiExternalLink,
-  FiCheckCircle, FiClock, FiAlertCircle, FiPlay,
-  FiZap, FiEye, FiMapPin, FiRefreshCw, FiImage
+  FiCpu, FiSearch, FiExternalLink,
+  FiFolder, FiFolderMinus, FiFilm, FiImage as FiImageIcon, FiFile,
+  FiChevronRight, FiChevronDown, FiHardDrive,
+  FiRefreshCw, FiAlertCircle, FiPlay, FiEye,
+  FiZap, FiCheckCircle, FiClock, FiFileText, FiLoader
 } from 'react-icons/fi';
 import YoloDetectionModal from '../components/YoloDetectionModal';
+import { minioApi, ocrApi } from '../services/api';
 
-// ─── Pipeline stages ──────────────────────────────────────────────────────────
-const PIPELINE = [
-  {
-    id: 1,
-    icon: FiCamera,
-    name: '360° Capture',
-    desc: 'Car-mounted 360° camera collects street footage',
-    status: 'done',
-    detail: 'Session: Al-Haram · 14.2 km recorded',
-  },
-  {
-    id: 2,
-    icon: FiPlay,
-    name: 'Frame Extraction',
-    desc: 'Video decoded & frames sampled at 2 fps',
-    status: 'done',
-    detail: '≈ 12,400 frames extracted',
-  },
-  {
-    id: 3,
-    icon: FiSearch,
-    name: 'Shop Detection',
-    desc: 'YOLO v8 model identifies shop frontages',
-    status: 'processing',
-    detail: '7,214 / 12,400 frames processed',
-  },
-  {
-    id: 4,
-    icon: FiEye,
-    name: 'OCR — Sign Reading',
-    desc: 'Arabic & English text extracted from shop boards',
-    status: 'queued',
-    detail: 'Waiting for Detection stage',
-  },
-  {
-    id: 5,
-    icon: FiDatabase,
-    name: 'License DB Matching',
-    desc: 'Extracted names compared with municipal registry',
-    status: 'queued',
-    detail: 'Waiting for OCR stage',
-  },
-  {
-    id: 6,
-    icon: FiTag,
-    name: 'Violation Classification',
-    desc: 'Each shop flagged & categorised by violation type',
-    status: 'queued',
-    detail: 'Waiting for DB Match stage',
-  },
+// ─── Palette for top-level folder cards ───────────────────────────────────────
+const PALETTE = [
+  { bg:'bg-blue-50',    border:'border-blue-200',    icon:'text-blue-500'    },
+  { bg:'bg-emerald-50', border:'border-emerald-200', icon:'text-emerald-500' },
+  { bg:'bg-violet-50',  border:'border-violet-200',  icon:'text-violet-500'  },
+  { bg:'bg-amber-50',   border:'border-amber-200',   icon:'text-amber-500'   },
+  { bg:'bg-rose-50',    border:'border-rose-200',     icon:'text-rose-500'    },
+  { bg:'bg-cyan-50',    border:'border-cyan-200',     icon:'text-cyan-500'    },
 ];
-
-// ─── Demo recent detections ───────────────────────────────────────────────────
-const DEMO_DETECTIONS = [
-  { id: 1, shopName: 'Al-Baraka Grocery',  zone: 'Al-Haram', confidence: 97, ocr: 'البركة للبقالة', matched: true,  violation: 'No License',          status: 'flagged' },
-  { id: 2, shopName: 'Crown Electronics',  zone: 'Al-Haram', confidence: 94, ocr: 'كراون للإلكترونيات', matched: true,  violation: 'Expired License',     status: 'flagged' },
-  { id: 3, shopName: 'Noor Pharmacy',      zone: 'Quba',     confidence: 91, ocr: 'نور للصيدليات',  matched: true,  violation: null,                  status: 'clear' },
-  { id: 4, shopName: 'Unknown Shop #2147', zone: 'Al-Haram', confidence: 82, ocr: '[unreadable]',   matched: false, violation: 'Health Violation',    status: 'flagged' },
-  { id: 5, shopName: 'Madina Sweets',      zone: 'Al-Haram', confidence: 89, ocr: 'مدينة للحلويات', matched: true,  violation: null,                  status: 'clear' },
-  { id: 6, shopName: 'Al-Ameen Tailor',    zone: 'Aziziyah', confidence: 76, ocr: 'الأمين للخياطة', matched: false, violation: 'Encroachment',        status: 'flagged' },
-];
-
-// ─── Upcoming features ────────────────────────────────────────────────────────
-const UPCOMING = [
-  { icon: '🗺️', label: 'Zone Heatmaps',       desc: 'Density maps of violations across Madinah districts' },
-  { icon: '📈', label: 'Trend Analysis',       desc: 'Week-over-week compliance scoring per route' },
-  { icon: '🤖', label: 'Auto Enforcement',     desc: 'Auto-generate violation notices from AI findings' },
-  { icon: '🔄', label: 'Continuous Sync',      desc: 'Real-time sync with KoboToolbox field reports' },
-  { icon: '📷', label: 'Live Camera Feed',     desc: 'Stream and process footage in real-time' },
-  { icon: '🔍', label: 'Advanced OCR',         desc: 'Multi-language shop name recognition & transliteration' },
-];
+function palette(i) { return PALETTE[i % PALETTE.length]; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const STAGE_STYLE = {
-  done:       { bar: 'bg-green-500',  ring: 'ring-green-200',  text: 'text-green-700',  badge: 'bg-green-100 text-green-700',  icon: FiCheckCircle },
-  processing: { bar: 'bg-blue-500',   ring: 'ring-blue-200',   text: 'text-blue-700',   badge: 'bg-blue-100 text-blue-700',   icon: FiRefreshCw },
-  queued:     { bar: 'bg-gray-300',   ring: 'ring-gray-200',   text: 'text-gray-500',   badge: 'bg-gray-100 text-gray-500',   icon: FiClock },
-};
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  const e = Math.min(Math.floor(Math.log2(b) / 10), u.length - 1);
+  return `${(b / 1024 ** e).toFixed(1)} ${u[e]}`;
+}
+function prettyName(n = '') {
+  return n.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+function fileIconType(name = '') {
+  const ext = name.split('.').pop().toLowerCase();
+  if (['mp4','mov','avi','mkv','webm'].includes(ext)) return 'video';
+  if (['jpg','jpeg','png','webp','tiff','bmp','gif'].includes(ext)) return 'image';
+  return 'file';
+}
 
-function PipelineStep({ stage, index, total }) {
-  const s = STAGE_STYLE[stage.status];
-  const Icon  = stage.icon;
-  const SIcon = s.icon;
-  const isLast = index === total - 1;
+// ─── File row ─────────────────────────────────────────────────────────────────
+function FileRow({ file, indent }) {
+  const type = fileIconType(file.name);
+  if (file.name === '.keep') return null;
 
   return (
-    <div className="flex gap-4">
-      {/* Left: icon + connector */}
-      <div className="flex flex-col items-center">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ring-4 ${s.ring} ${
-          stage.status === 'done'       ? 'bg-green-500' :
-          stage.status === 'processing' ? 'bg-blue-600'  : 'bg-gray-200'
-        }`}>
-          <Icon size={18} className="text-white" />
-        </div>
-        {!isLast && <div className="w-0.5 bg-gray-200 flex-1 mt-2 min-h-[28px]" />}
-      </div>
+    <div
+      className="flex items-center gap-2 py-1.5 px-3 rounded-lg hover:bg-gray-50 transition-colors"
+      style={{ paddingLeft: `${indent * 16 + 8}px` }}
+    >
+      {type === 'video'
+        ? <FiFilm size={14} className="text-blue-400 flex-shrink-0" />
+        : type === 'image'
+          ? <FiImageIcon size={14} className="text-emerald-400 flex-shrink-0" />
+          : <FiFile size={14} className="text-gray-400 flex-shrink-0" />
+      }
+      <span className="flex-1 text-sm text-gray-700 truncate" title={file.name}>{file.name}</span>
+      <span className="text-xs text-gray-400">{fmtBytes(file.size)}</span>
+    </div>
+  );
+}
 
-      {/* Right: content */}
-      <div className={`flex-1 pb-6 ${isLast ? '' : ''}`}>
-        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Step {stage.id}</span>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge} flex items-center gap-1`}>
-            {stage.status === 'processing' && <FiZap size={10} className="animate-pulse" />}
-            {stage.status}
-          </span>
+// ─── Recursive folder node (read-only explorer) ──────────────────────────────
+function FolderNode({ node, depth, colorIndex, selectedPath, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const c = depth === 0 ? palette(colorIndex) : null;
+  const isSelected = selectedPath === node.path;
+  const hasContent = node.subfolders?.length > 0 || node.files?.filter(f => f.name !== '.keep').length > 0;
+
+  // ── TOP-LEVEL card ──
+  if (depth === 0) {
+    return (
+      <div className={`rounded-2xl border-2 overflow-hidden transition-all duration-200 ${
+        isSelected ? 'ring-2 ring-indigo-400 border-indigo-300 shadow-lg' :
+        open ? `${c.border} shadow-md` : 'border-gray-100 hover:border-gray-200 shadow-sm hover:shadow-md'
+      }`}>
+        <div
+          className={`flex items-center gap-3 px-5 py-4 cursor-pointer select-none group ${
+            isSelected ? 'bg-indigo-50' : open ? c.bg : 'bg-white hover:bg-gray-50'
+          }`}
+          onClick={() => { setOpen(v => !v); onSelect(node.path); }}
+        >
+          {open ? <FiChevronDown size={16} className="text-gray-400 flex-shrink-0" />
+                : <FiChevronRight size={16} className="text-gray-400 flex-shrink-0" />}
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${c.bg} border ${c.border}`}>
+            <FiFolder size={18} className={c.icon} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-gray-900 text-sm">{prettyName(node.name)}</p>
+            <p className="text-[11px] text-gray-400 font-mono mt-0.5">{node.path}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-sm font-semibold text-gray-800">{node.total_files} file{node.total_files !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-400">{fmtBytes(node.total_size)}</p>
+          </div>
         </div>
-        <p className="font-semibold text-gray-900 text-sm">{stage.name}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{stage.desc}</p>
-        <p className={`text-xs mt-1 font-medium ${s.text}`}>{stage.detail}</p>
+        {open && (
+          <div className="border-t border-gray-100 bg-white px-3 py-2 space-y-0.5">
+            {!hasContent && <p className="text-sm text-gray-400 italic py-2 px-2">Empty folder.</p>}
+            {node.files?.map((f, i) => <FileRow key={i} file={f} indent={0} />)}
+            {node.subfolders?.map((sf) => (
+              <FolderNode key={sf.path} node={sf} depth={1} colorIndex={colorIndex}
+                selectedPath={selectedPath} onSelect={onSelect} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── INNER folder ──
+  const indentPx = (depth - 1) * 16;
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-2 py-1.5 rounded-lg transition-colors cursor-pointer select-none group ${
+          isSelected ? 'bg-indigo-50 ring-1 ring-indigo-200' : 'hover:bg-gray-100'
+        }`}
+        style={{ paddingLeft: `${indentPx + 8}px` }}
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); onSelect(node.path); }}
+      >
+        {open ? <FiChevronDown size={12} className="text-gray-400 flex-shrink-0" />
+              : <FiChevronRight size={12} className="text-gray-400 flex-shrink-0" />}
+        {open
+          ? <FiFolderMinus size={15} className="text-gray-400 flex-shrink-0" />
+          : <FiFolder size={15} className="text-gray-500 flex-shrink-0" />}
+        <span className="flex-1 text-sm font-medium text-gray-700">{prettyName(node.name)}</span>
+        <span className="text-xs text-gray-400 mr-1">{node.total_files} files</span>
+        <span className="text-xs text-gray-400">{fmtBytes(node.total_size)}</span>
+      </div>
+      {open && (
+        <div style={{ paddingLeft: `${indentPx + 24}px` }} className="border-l border-gray-100 ml-2">
+          {!hasContent && <p className="text-xs text-gray-400 italic py-1 px-2">Empty</p>}
+          {node.files?.map((f, i) => <FileRow key={i} file={f} indent={0} />)}
+          {node.subfolders?.map(sf => (
+            <FolderNode key={sf.path} node={sf} depth={depth + 1} colorIndex={colorIndex}
+              selectedPath={selectedPath} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Skeleton loader ──────────────────────────────────────────────────────────
+function Skeleton() {
+  return (
+    <div className="rounded-2xl border-2 border-gray-100 bg-white px-5 py-4 animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-4 h-4 bg-gray-200 rounded" />
+        <div className="w-10 h-10 bg-gray-200 rounded-xl" />
+        <div className="flex-1 space-y-2">
+          <div className="h-3.5 bg-gray-200 rounded w-48" />
+          <div className="h-2.5 bg-gray-100 rounded w-28" />
+        </div>
+        <div className="space-y-1">
+          <div className="h-3.5 bg-gray-200 rounded w-16 ml-auto" />
+          <div className="h-2.5 bg-gray-100 rounded w-12 ml-auto" />
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── OCR Step Indicator ───────────────────────────────────────────────────────
+function OcrStepIndicator({ step, currentStep }) {
+  const isDone = currentStep > step;
+  const isActive = currentStep === step;
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+      isDone ? 'bg-green-50 text-green-700 border border-green-200' :
+      isActive ? 'bg-blue-50 text-blue-700 border border-blue-200 animate-pulse' :
+      'bg-gray-50 text-gray-400 border border-gray-100'
+    }`}>
+      {isDone ? <FiCheckCircle size={14} /> : isActive ? <FiLoader size={14} className="animate-spin" /> : <FiClock size={14} />}
+      <span>{step === 1 ? 'Connecting to MinIO' : step === 2 ? 'Reading images' : 'Running Azure OCR'}</span>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  MAIN PAGE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export default function AiLabPage() {
-  const [progress, setProgress] = useState(58);
   const [showYoloModal, setShowYoloModal] = useState(false);
 
-  // Simulate live progress ticking
-  useEffect(() => {
-    const t = setInterval(() => {
-      setProgress((p) => (p >= 62 ? 58 : p + 0.2));
-    }, 800);
-    return () => clearInterval(t);
+  // ── Section 1: Folder Explorer state ──
+  const [folders, setFolders]         = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [error, setError]             = useState(null);
+  const [search, setSearch]           = useState('');
+  const [selectedPath, setSelectedPath] = useState('');
+
+  // ── Section 2: OCR state ──
+  const [ocrLoading, setOcrLoading]   = useState(false);
+  const [ocrStep, setOcrStep]         = useState(0);   // 0=idle, 1,2,3=steps
+  const [ocrError, setOcrError]       = useState(null);
+
+  // ── Section 3: Results state ──
+  const [ocrResults, setOcrResults]   = useState([]);
+  const [expandedResult, setExpandedResult] = useState(null);
+
+  // ── Fetch folder tree ──
+  const fetchData = useCallback(async (silent = false) => {
+    silent ? setRefreshing(true) : setLoading(true);
+    setError(null);
+    try {
+      const { data } = await minioApi.listAllFolders();
+      setFolders(data.folders || []);
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to load bucket data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const flagged = DEMO_DETECTIONS.filter((d) => d.status === 'flagged').length;
-  const clear   = DEMO_DETECTIONS.filter((d) => d.status === 'clear').length;
+  useEffect(() => { fetchData(false); }, [fetchData]);
+
+  // ── Filter folders ──
+  const filtered = folders.filter(f => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q);
+  });
+
+  // ── Run OCR ──
+  const handleRunOcr = async () => {
+    if (!selectedPath) return;
+    setOcrLoading(true);
+    setOcrError(null);
+    setOcrResults([]);
+    setOcrStep(1);
+
+    try {
+      // Simulate step progression for UX
+      await new Promise(r => setTimeout(r, 400));
+      setOcrStep(2);
+      await new Promise(r => setTimeout(r, 400));
+      setOcrStep(3);
+
+      const { data } = await ocrApi.runFolderOcr(selectedPath);
+      setOcrResults(data.results || []);
+      setOcrStep(0);
+    } catch (err) {
+      setOcrError(err.response?.data?.detail || err.message || 'OCR processing failed.');
+      setOcrStep(0);
+    } finally {
+      setOcrLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
 
-      {/* ── Header ── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          HEADER
+      ══════════════════════════════════════════════════════════════════════ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div
@@ -157,12 +275,11 @@ export default function AiLabPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">AI Lab</h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Automated Illegal Shop Detection — Madinah City
+              Automated Illegal Shop Detection &mdash; Madinah City
             </p>
           </div>
         </div>
 
-        {/* Primary CTA — existing hyperlink kept as required */}
         <div className="flex flex-wrap items-center gap-3 justify-end">
           <button
             onClick={() => setShowYoloModal(true)}
@@ -171,7 +288,6 @@ export default function AiLabPage() {
           >
             <FiSearch size={15} /> Open YOLO Detection
           </button>
-
           <a
             href="https://aces.logicity.in/"
             target="_blank"
@@ -184,150 +300,257 @@ export default function AiLabPage() {
         </div>
       </div>
 
-      {/* ── Under-development banner ── */}
-      <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-        <span className="text-2xl leading-none flex-shrink-0">🚧</span>
-        <div>
-          <p className="text-sm font-semibold text-amber-800">Under Active Development</p>
-          <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-            The AI pipeline is currently being built and integrated. The cards below show the planned
-            workflow with demo data. Live processing will be available in the next release.
-          </p>
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECTION 1 — FOLDER EXPLORER
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center shadow">
+              <FiFolder size={16} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Folder Explorer</h2>
+              <p className="text-sm text-gray-500">Browse MinIO folders &amp; select one for OCR processing</p>
+            </div>
+          </div>
+          <button
+            onClick={() => fetchData(true)}
+            disabled={loading || refreshing}
+            className="flex items-center gap-1.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <FiRefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="mb-4">
+          <div className="relative">
+            <FiSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search folders by name or path..."
+              className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Selected folder indicator */}
+        {selectedPath && (
+          <div className="mb-4 flex items-center gap-2 text-sm bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
+            <FiCheckCircle size={14} className="text-indigo-500 flex-shrink-0" />
+            <span className="text-indigo-700 font-medium">Selected:</span>
+            <span className="text-indigo-900 font-semibold font-mono text-xs">{selectedPath}</span>
+            <button
+              onClick={() => setSelectedPath('')}
+              className="ml-auto text-xs text-indigo-400 hover:text-indigo-700 font-semibold"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 mb-4">
+            <FiAlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">Could not load bucket data</p>
+              <p className="text-red-400 text-xs mt-0.5">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Folder tree */}
+        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+          {loading
+            ? [0, 1, 2, 3].map(i => <Skeleton key={i} />)
+            : filtered.length === 0
+              ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+                  <FiFolder size={36} className="text-gray-200 mx-auto mb-3" />
+                  {search
+                    ? <p className="text-gray-500 font-medium">No folders match "<span className="font-semibold">{search}</span>"</p>
+                    : <p className="text-gray-500 font-medium">No folders found in bucket.</p>
+                  }
+                </div>
+              )
+              : filtered.map((f, i) => (
+                <FolderNode
+                  key={f.path} node={f} depth={0} colorIndex={i}
+                  selectedPath={selectedPath} onSelect={setSelectedPath}
+                />
+              ))
+          }
         </div>
       </div>
 
-      {/* ── Live processing stats ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Active Session',    value: 'Al-Haram',        icon: <FiMapPin size={16} className="text-blue-500" />,      bg: 'bg-blue-50 border-blue-100' },
-          { label: 'Frames Processed',  value: '7,214',           icon: <FiZap size={16} className="text-violet-500" />,        bg: 'bg-violet-50 border-violet-100' },
-          { label: 'Shops Detected',    value: '348',             icon: <FiSearch size={16} className="text-emerald-500" />,   bg: 'bg-emerald-50 border-emerald-100' },
-          { label: 'Flagged Violations',value: flagged.toString(),icon: <FiAlertCircle size={16} className="text-rose-500" />, bg: 'bg-rose-50 border-rose-100' },
-        ].map((s) => (
-          <div key={s.label} className={`${s.bg} border rounded-2xl p-4`}>
-            <div className="flex items-center gap-2 mb-1">{s.icon}<span className="text-xs text-gray-500 font-medium">{s.label}</span></div>
-            <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECTION 2 — OCR PROCESS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center shadow"
+            style={{ background: 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
+          >
+            <FiEye size={16} className="text-white" />
           </div>
-        ))}
-      </div>
-
-      {/* ── Main grid: pipeline + detections ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-
-        {/* Pipeline */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Processing Pipeline</h2>
-              <p className="text-sm text-gray-500">End-to-end shop detection workflow</p>
-            </div>
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
-              <FiZap size={11} className="animate-pulse" /> Live
-            </span>
-          </div>
-
-          {/* Overall progress bar */}
-          <div className="mb-6">
-            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-              <span>Overall progress</span>
-              <span className="font-semibold text-blue-700">{progress.toFixed(0)}%</span>
-            </div>
-            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-violet-500 rounded-full transition-all duration-700"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Stages */}
           <div>
-            {PIPELINE.map((stage, i) => (
-              <PipelineStep key={stage.id} stage={stage} index={i} total={PIPELINE.length} />
-            ))}
+            <h2 className="text-lg font-semibold text-gray-900">OCR Process</h2>
+            <p className="text-sm text-gray-500">
+              Extract Arabic &amp; English text from shop sign images using Azure Computer Vision
+            </p>
           </div>
         </div>
 
-        {/* Recent Detections */}
-        <div className="card flex flex-col">
-          <div className="flex items-center justify-between mb-4">
+        {/* OCR Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+          <div className="flex-1 relative">
+            <FiFolder size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              readOnly
+              value={selectedPath || ''}
+              placeholder="Select a folder from the explorer above..."
+              className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 cursor-default focus:outline-none"
+            />
+          </div>
+          <button
+            onClick={handleRunOcr}
+            disabled={ocrLoading || !selectedPath}
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            style={{ background: ocrLoading ? '#94a3b8' : 'linear-gradient(135deg,#3b82f6,#6366f1)' }}
+          >
+            {ocrLoading ? (
+              <>
+                <FiLoader size={15} className="animate-spin" /> Processing...
+              </>
+            ) : (
+              <>
+                <FiPlay size={15} /> Run OCR
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Step indicators */}
+        {ocrLoading && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            <OcrStepIndicator step={1} currentStep={ocrStep} />
+            <OcrStepIndicator step={2} currentStep={ocrStep} />
+            <OcrStepIndicator step={3} currentStep={ocrStep} />
+          </div>
+        )}
+
+        {/* OCR Error */}
+        {ocrError && (
+          <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+            <FiAlertCircle size={16} className="flex-shrink-0 mt-0.5" />
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Recent Detections</h2>
-              <p className="text-sm text-gray-500">Latest AI-identified shops</p>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-xs font-semibold bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full">{flagged} flagged</span>
-              <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full">{clear} clear</span>
+              <p className="font-medium">OCR Failed</p>
+              <p className="text-red-400 text-xs mt-0.5">{ocrError}</p>
             </div>
           </div>
+        )}
 
-          <div className="flex-1 space-y-2 overflow-y-auto max-h-[440px] pr-1">
-            {DEMO_DETECTIONS.map((d) => (
-              <div
-                key={d.id}
-                className={`rounded-xl border p-3 transition-colors ${
-                  d.status === 'flagged'
-                    ? 'border-rose-100 bg-rose-50/60'
-                    : 'border-green-100 bg-green-50/60'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{d.shopName}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 font-arabic">{d.ocr}</p>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <FiMapPin size={10} />{d.zone}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        Confidence: <strong className="text-gray-700">{d.confidence}%</strong>
-                      </span>
-                      {d.matched
-                        ? <span className="text-xs text-emerald-600 font-medium">✓ DB matched</span>
-                        : <span className="text-xs text-amber-600 font-medium">⚠ No DB match</span>
-                      }
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    {d.violation ? (
-                      <span className="text-xs font-medium bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full whitespace-nowrap">
-                        {d.violation}
+        {/* Helpful hint */}
+        {!ocrLoading && !ocrError && ocrResults.length === 0 && (
+          <div className="flex items-center gap-2 text-sm text-gray-400 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+            <FiFileText size={14} className="flex-shrink-0" />
+            <span>Select a folder above and click <strong>Run OCR</strong> to extract text from images.</span>
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SECTION 3 — RESULTS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center shadow"
+              style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}
+            >
+              <FiFileText size={16} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Results</h2>
+              <p className="text-sm text-gray-500">OCR-extracted text from shop sign images</p>
+            </div>
+          </div>
+          {ocrResults.length > 0 && (
+            <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full">
+              {ocrResults.length} image{ocrResults.length !== 1 ? 's' : ''} processed
+            </span>
+          )}
+        </div>
+
+        {ocrResults.length === 0 ? (
+          <div className="bg-gray-50 rounded-2xl border border-gray-100 p-10 text-center">
+            <FiFileText size={36} className="text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">No OCR results yet</p>
+            <p className="text-gray-400 text-sm mt-1">Run the OCR process above to see extracted text here.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+            {ocrResults.map((r, i) => {
+              const isExpanded = expandedResult === i;
+              const hasText = r.text && r.text.trim().length > 0;
+              return (
+                <div
+                  key={i}
+                  className={`rounded-xl border-2 overflow-hidden transition-all duration-200 ${
+                    hasText
+                      ? 'border-emerald-100 hover:border-emerald-200'
+                      : 'border-amber-100 hover:border-amber-200'
+                  }`}
+                >
+                  {/* Result header */}
+                  <div
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer select-none ${
+                      hasText ? 'bg-emerald-50/60' : 'bg-amber-50/60'
+                    }`}
+                    onClick={() => setExpandedResult(isExpanded ? null : i)}
+                  >
+                    {isExpanded
+                      ? <FiChevronDown size={14} className="text-gray-400 flex-shrink-0" />
+                      : <FiChevronRight size={14} className="text-gray-400 flex-shrink-0" />}
+                    <FiImageIcon size={15} className={hasText ? 'text-emerald-500' : 'text-amber-500'} />
+                    <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{r.name}</span>
+                    {hasText ? (
+                      <span className="text-xs font-medium bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                        Text found
                       </span>
                     ) : (
-                      <span className="text-xs font-medium bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        Compliant
+                      <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        No text
                       </span>
                     )}
                   </div>
+
+                  {/* Expanded text content */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 bg-white px-4 py-3">
+                      {hasText ? (
+                        <pre className="text-sm text-gray-800 whitespace-pre-wrap font-arabic leading-relaxed bg-gray-50 rounded-lg p-3 border border-gray-100">
+                          {r.text}
+                        </pre>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">No readable text was extracted from this image.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ── Upcoming Features ── */}
-      <div className="card">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Upcoming Features</h2>
-          <p className="text-sm text-gray-500">Planned capabilities for the AI Lab roadmap</p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {UPCOMING.map((f) => (
-            <div
-              key={f.label}
-              className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
-            >
-              <span className="text-2xl leading-none flex-shrink-0">{f.icon}</span>
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{f.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{f.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+      {/* ── YOLO Modal ── */}
       {showYoloModal && (
         <YoloDetectionModal onClose={() => setShowYoloModal(false)} />
       )}

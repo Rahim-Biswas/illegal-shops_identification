@@ -23,7 +23,7 @@ import { Style, Fill, Stroke, Circle as CircleStyle, Text, RegularShape } from '
 import Overlay from 'ol/Overlay';
 import { Viewer } from 'mapillary-js';
 import 'mapillary-js/dist/mapillary.css';
-import { complaintApi, customDataApi, userApi } from '../services/api';
+import { complaintApi, customDataApi, userApi, minioApi } from '../services/api';
 import { useAuthStore } from '../store/store';
 import { UserDetailsModal, DUMMY_ARABIC_USERS, enhanceDbUser } from './AdminUsers';
 import { toast } from 'react-toastify';
@@ -33,6 +33,7 @@ import {
   FiClock, FiTag, FiCamera, FiMaximize2, FiMinimize2,
   FiLayers, FiZoomIn, FiEyeOff, FiGlobe, FiNavigation2,
   FiDatabase, FiCheck, FiTable, FiSearch, FiUser,
+  FiFolder, FiChevronDown, FiChevronRight, FiImage, FiHardDrive,
 } from 'react-icons/fi';
 import 'ol/ol.css';
 
@@ -382,7 +383,7 @@ const LAYER_META = [
   },
 ];
 
-function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, customPlottedFiles = [], onDeleteCustomPlot, onOpenAttributeTable }) {
+function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, customPlottedFiles = [], onDeleteCustomPlot, onOpenAttributeTable, minioPlottedFolders = [], onDeleteMinioPlot }) {
   return (
     <div className="absolute top-24 left-2 z-30 flex flex-col items-start gap-1">
       {/* Toggle button — styled like OL zoom controls */}
@@ -528,6 +529,62 @@ function LayerPanel({ open, onToggleOpen, layerVis, onToggleLayer, onZoomTo, cus
                 })}
               </>
             )}
+
+            {/* MinIO Folder Plotted Layers */}
+            {minioPlottedFolders && minioPlottedFolders.length > 0 && (
+              <>
+                <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                  <FiImage size={10} /> MinIO Images
+                </div>
+                {minioPlottedFolders.map((file) => {
+                  const visible = layerVis[file.filename] !== false; // default to visible
+                  return (
+                    <div key={file.filename} className={`px-3 py-2 transition-colors ${visible ? 'bg-white' : 'bg-gray-50'}`}>
+                      <div className="flex items-center gap-2">
+                        {/* Color swatch */}
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: file.color, opacity: visible ? 1 : 0.3 }}
+                        />
+                        {/* Details */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold truncate ${visible ? 'text-gray-800' : 'text-gray-400'}`} title={file.filename}>
+                            {file.filename}
+                          </p>
+                          <p className="text-[10px] text-gray-400 truncate">{file.success} images</p>
+                        </div>
+                        {/* Zoom to */}
+                        <button
+                          onClick={() => onZoomTo(file.filename)}
+                          title="Zoom to dataset"
+                          className="text-gray-400 hover:text-rose-500 transition-colors flex-shrink-0"
+                        >
+                          <FiZoomIn size={13} />
+                        </button>
+                        {/* Visibility toggle */}
+                        <button
+                          onClick={() => onToggleLayer(file.filename)}
+                          title={visible ? 'Hide dataset' : 'Show dataset'}
+                          className={`flex-shrink-0 transition-colors ${visible ? 'text-rose-500 hover:text-rose-700' : 'text-gray-300 hover:text-gray-500'}`}
+                        >
+                          {visible ? <FiEye size={14} /> : <FiEyeOff size={14} />}
+                        </button>
+                        {/* Remove/Delete */}
+                        {onDeleteMinioPlot && (
+                          <button
+                            onClick={() => onDeleteMinioPlot(file.filename)}
+                            title="Remove dataset"
+                            className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 ml-0.5"
+                          >
+                            <FiX size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -646,7 +703,7 @@ function MultiSelectDropdown({ options, selected, onChange }) {
   );
 }
 
-function AttributeTable({ type, name, search, setSearch, filterField, setFilterField, filterValue, setFilterValue, getUniqueValues, rows, onClose, onZoomToRow, onIdentify, plottedFiles, navigate, onShowProfile }) {
+function AttributeTable({ type, name, search, setSearch, filterField, setFilterField, filterValue, setFilterValue, getUniqueValues, rows, onClose, onZoomToRow, onIdentify, plottedFiles, navigate, onShowProfile, selectedShop, selectedCustomPoint }) {
   let headers = [];
   if (type === 'violations') {
     headers = ['ID / Submission ID', 'Title', 'Violation Type', 'Severity', 'Status', 'Zone', 'Inspector', 'Created Date'];
@@ -761,7 +818,7 @@ function AttributeTable({ type, name, search, setSearch, filterField, setFilterF
                   const statusColor = STATUS_COLORS[shop.status] || '#9ca3af';
 
                   return (
-                    <tr key={shop.id || idx} className="hover:bg-slate-800/65 bg-slate-900/10 transition-colors">
+                    <tr key={shop.id || idx} className={`transition-colors ${selectedShop?.id === shop.id ? 'bg-blue-900/40 border-l-2 border-blue-400' : 'hover:bg-slate-800/65 bg-slate-900/10'}`}>
                       {/* Actions */}
                       <td className="px-3 py-1.5 flex items-center justify-center gap-2">
                         <button
@@ -826,7 +883,7 @@ function AttributeTable({ type, name, search, setSearch, filterField, setFilterF
                   const canZoom = !isNaN(lat) && !isNaN(lon);
 
                   return (
-                    <tr key={idx} className="hover:bg-slate-800/65 bg-slate-900/10 transition-colors">
+                    <tr key={idx} className={`transition-colors ${selectedCustomPoint === row ? 'bg-indigo-900/40 border-l-2 border-indigo-400' : 'hover:bg-slate-800/65 bg-slate-900/10'}`}>
                       {/* Actions */}
                       <td className="px-3 py-1.5 flex items-center justify-center gap-2">
                         {canZoom ? (
@@ -867,6 +924,71 @@ function AttributeTable({ type, name, search, setSearch, filterField, setFilterF
   );
 }
 
+// ── MinIO Folder Node Component ──
+function MapMinioNode({ node, depth, expandedFolders, toggleFolder, folderGpsData, plotFolderGps }) {
+  const open = expandedFolders[node.path];
+  
+  // check if this folder's images have GPS
+  const gpsData = folderGpsData[node.path];
+  const isLoadingGps = folderGpsData[node.path] === 'loading';
+
+  return (
+    <div className={`my-1 ${depth === 0 ? 'border rounded-lg overflow-hidden border-slate-700 bg-slate-800' : ''}`}>
+       <div 
+         className={`flex items-center gap-2 p-2 cursor-pointer hover:bg-slate-700 select-none ${depth===0 ? 'bg-slate-800/80':''}`}
+         style={{ paddingLeft: `${depth * 12 + 8}px` }}
+         onClick={() => toggleFolder(node.path)}
+       >
+         {open ? <FiChevronDown size={14} className="text-slate-400 flex-shrink-0" /> : <FiChevronRight size={14} className="text-slate-400 flex-shrink-0" />}
+         <FiFolder size={14} className="text-blue-400 flex-shrink-0" />
+         <span className="text-xs text-slate-200 truncate flex-1">{node.name}</span>
+         
+         {/* Button to plot GPS if it has images */}
+         {node.files?.some(f => f.name.match(/\.(jpg|jpeg|tif|tiff)$/i)) && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); plotFolderGps(node.path); }}
+              className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded transition-colors flex-shrink-0"
+              title="Plot image coordinates on Map"
+            >
+              {isLoadingGps ? <FiLoader size={10} className="animate-spin" /> : 'Plot GPS'}
+            </button>
+         )}
+       </div>
+       
+       {open && (
+         <div className="border-l border-slate-700 ml-3">
+            {node.subfolders?.map(sf => (
+               <MapMinioNode 
+                 key={sf.path} 
+                 node={sf} 
+                 depth={depth + 1} 
+                 expandedFolders={expandedFolders} 
+                 toggleFolder={toggleFolder}
+                 folderGpsData={folderGpsData}
+                 plotFolderGps={plotFolderGps}
+               />
+            ))}
+            {node.files?.map(f => {
+               if (f.name === '.keep') return null;
+               // check if this specific file has GPS
+               const gpsPoint = Array.isArray(gpsData) ? gpsData.find(g => g.name === f.name) : null;
+               
+               return (
+                 <div key={f.name} className="flex items-center gap-2 p-1.5 hover:bg-slate-700 select-none" style={{ paddingLeft: `${(depth+1) * 12 + 8}px` }}>
+                   <FiImage size={12} className="text-emerald-400 flex-shrink-0" />
+                   <span className="text-xs text-slate-400 truncate flex-1" title={f.name}>{f.name}</span>
+                   {gpsPoint && (
+                     <FiMapPin size={12} className="text-rose-400 flex-shrink-0" title={`GPS: ${gpsPoint.latitude.toFixed(4)}, ${gpsPoint.longitude.toFixed(4)}`} />
+                   )}
+                 </div>
+               )
+            })}
+         </div>
+       )}
+    </div>
+  )
+}
+
 export default function MapPage() {
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
@@ -893,6 +1015,15 @@ export default function MapPage() {
   const [attributeTableFilterField, setAttributeTableFilterField] = useState('');
   const [attributeTableFilterValue, setAttributeTableFilterValue] = useState([]);
   const [inspectorProfile, setInspectorProfile] = useState(null);
+  const [selectedCoord, setSelectedCoord] = useState(null);
+  const highlightSourceRef = useRef(new VectorSource());
+
+  // MinIO Explorer States
+  const [minioFolders, setMinioFolders] = useState([]);
+  const [minioLoading, setMinioLoading] = useState(false);
+  const [minioExpanded, setMinioExpanded] = useState({});
+  const [folderGpsData, setFolderGpsData] = useState({});
+  const [minioPlottedFolders, setMinioPlottedFolders] = useState([]);
 
   const handleShowInspectorProfile = async (collectorName) => {
     try {
@@ -1071,9 +1202,21 @@ export default function MapPage() {
     });
     viewerDotLayerRef.current = dotLayer;
 
+    const highlightLayer = new VectorLayer({
+      source: highlightSourceRef.current,
+      zIndex: 30,
+      style: new Style({
+        image: new CircleStyle({
+          radius: 14,
+          fill: new Fill({ color: 'rgba(250, 204, 21, 0.4)' }),
+          stroke: new Stroke({ color: '#eab308', width: 3 })
+        })
+      })
+    });
+
     mapRef.current = new Map({
       target: mapContainer.current,
-      layers: [baseTileLayer, mlyCoverageLayer, violationsLayer, dotLayer],
+      layers: [baseTileLayer, mlyCoverageLayer, violationsLayer, dotLayer, highlightLayer],
       view: new View({ center: fromLonLat([39.597, 24.468]), zoom: 13 }),
       overlays: [overlay],
     });
@@ -1092,6 +1235,7 @@ export default function MapPage() {
           overlay.setPosition(coord);
           setSelectedShop(shop);
           setSelectedCustomPoint(null);
+          setSelectedCoord(coord);
           // Hide coverage popup if showing
           setMlyCoverageClick(null);
           hitShop = true;
@@ -1104,6 +1248,7 @@ export default function MapPage() {
           overlay.setPosition(coord);
           setSelectedCustomPoint(data);
           setSelectedShop(null);
+          setSelectedCoord(coord);
           setMlyCoverageClick(null);
           hitShop = true;
           return true;
@@ -1113,6 +1258,7 @@ export default function MapPage() {
           overlay.setPosition(undefined);
           setSelectedShop(null);
           setSelectedCustomPoint(null);
+          setSelectedCoord(null);
           setMlyCoverageClick({ lat, lon, pixel: evt.pixel, coord: coordinate });
           return true;
         }
@@ -1122,6 +1268,7 @@ export default function MapPage() {
         overlay.setPosition(undefined);
         setSelectedShop(null);
         setSelectedCustomPoint(null);
+        setSelectedCoord(null);
         setMlyCoverageClick(null);
       }
     });
@@ -1137,6 +1284,17 @@ export default function MapPage() {
       mapRef.current.getTargetElement().style.cursor = (hitShop || hitMly || hitCustom) ? 'pointer' : '';
     });
   }, []);  // eslint-disable-line
+
+  // ── Highlight Layer Sync ──
+  useEffect(() => {
+    if (!highlightSourceRef.current) return;
+    highlightSourceRef.current.clear();
+    if (selectedCoord) {
+      highlightSourceRef.current.addFeature(new Feature({
+        geometry: new Point(selectedCoord)
+      }));
+    }
+  }, [selectedCoord]);
 
   // ── Sync layer visibility state → OL layers ──
   useEffect(() => {
@@ -1421,6 +1579,148 @@ export default function MapPage() {
     }
   };
 
+  const fetchMinioFolders = async () => {
+    setMinioLoading(true);
+    try {
+      const { data } = await minioApi.listAllFolders();
+      setMinioFolders(data.folders || []);
+    } catch {
+      toast.error('Failed to load MinIO folders');
+    } finally {
+      setMinioLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (sidebarTab === 'minio' && minioFolders.length === 0) {
+      fetchMinioFolders();
+    }
+  }, [sidebarTab]);
+
+  const toggleMinioFolder = async (path) => {
+    setMinioExpanded(prev => ({ ...prev, [path]: !prev[path] }));
+    if (!folderGpsData[path]) {
+      setFolderGpsData(prev => ({ ...prev, [path]: 'loading' }));
+      try {
+        const { data } = await minioApi.getFolderGps(path);
+        setFolderGpsData(prev => ({ ...prev, [path]: data.images_with_gps || [] }));
+      } catch (err) {
+        setFolderGpsData(prev => ({ ...prev, [path]: [] }));
+      }
+    }
+  };
+
+  const plotMinioGps = (path) => {
+    const gpsList = Array.isArray(folderGpsData[path]) ? folderGpsData[path] : [];
+    if (!gpsList.length) {
+      toast.warn("No GPS data found in this folder");
+      return;
+    }
+    
+    if (minioPlottedFolders.some(f => f.filename === path)) {
+      toast.warn(`Folder ${path} is already plotted.`);
+      return;
+    }
+    
+    // Choose color
+    const colorPalette = ['#f43f5e', '#ec4899', '#eab308', '#84cc16'];
+    const color = colorPalette[minioPlottedFolders.length % colorPalette.length];
+
+    const source = new VectorSource();
+    const layer = new VectorLayer({
+      source,
+      zIndex: 15,
+      style: new Style({
+        image: new CircleStyle({
+          radius: 8,
+          fill: new Fill({ color }),
+          stroke: new Stroke({ color: '#ffffff', width: 2 }),
+        })
+      })
+    });
+    
+    let plotted = 0;
+    gpsList.forEach(gps => {
+      const feat = new Feature({
+        geometry: new Point(fromLonLat([gps.longitude, gps.latitude])),
+        customData: {
+          Filename: gps.name,
+          Path: gps.full_key,
+          Latitude: gps.latitude,
+          Longitude: gps.longitude,
+          Size: `${(gps.size/1024).toFixed(1)} KB`
+        }
+      });
+      source.addFeature(feat);
+      plotted++;
+    });
+    
+    if (plotted === 0) return;
+    
+    mapRef.current.addLayer(layer);
+    layerRefs.current[path] = layer;
+
+    const newPlot = {
+      filename: path,
+      color,
+      success: plotted,
+      failed: 0,
+    };
+
+    setMinioPlottedFolders(prev => [...prev, newPlot]);
+    setLayerVis(prev => ({ ...prev, [path]: true }));
+    
+    toast.success(`Plotted ${plotted} images from ${path}`);
+    mapRef.current.getView().fit(source.getExtent(), { padding: [80, 80, 80, 80], maxZoom: 15, duration: 700 });
+  };
+
+  const deleteMinioPlot = (path) => {
+    if (!mapRef.current) return;
+
+    const layer = layerRefs.current[path];
+    if (layer) {
+      mapRef.current.removeLayer(layer);
+      delete layerRefs.current[path];
+    }
+
+    overlayRef.current?.setPosition(undefined);
+    setSelectedCustomPoint(null);
+    setSelectedCoord(null);
+
+    setMinioPlottedFolders(prev => prev.filter(f => f.filename !== path));
+    setLayerVis(prev => {
+      const copy = { ...prev };
+      delete copy[path];
+      return copy;
+    });
+
+    toast.info(`Removed ${path} plot from map.`);
+  };
+
+  const clearMinioPlots = () => {
+    minioPlottedFolders.forEach(file => {
+      const layer = layerRefs.current[file.filename];
+      if (layer) {
+        mapRef.current.removeLayer(layer);
+        delete layerRefs.current[file.filename];
+      }
+    });
+
+    overlayRef.current?.setPosition(undefined);
+    setSelectedCustomPoint(null);
+    setSelectedCoord(null);
+    setMinioPlottedFolders([]);
+    setLayerVis(prev => {
+      const copy = { ...prev };
+      minioPlottedFolders.forEach(file => {
+        delete copy[file.filename];
+      });
+      return copy;
+    });
+
+    toast.info('Cleared MinIO folder plots.');
+  };
+
   const handleCustomFileChange = async (filename) => {
     setSelectedCustomFile(filename);
     setCustomFields([]);
@@ -1536,6 +1836,7 @@ export default function MapPage() {
 
     overlayRef.current?.setPosition(undefined);
     setSelectedCustomPoint(null);
+    setSelectedCoord(null);
 
     setPlottedFiles(prev => prev.filter(f => f.filename !== filename));
     setLayerVis(prev => {
@@ -1560,6 +1861,7 @@ export default function MapPage() {
 
     overlayRef.current?.setPosition(undefined);
     setSelectedCustomPoint(null);
+    setSelectedCoord(null);
     setPlottedFiles([]);
     setLayerVis(prev => {
       const copy = { ...prev };
@@ -1719,9 +2021,10 @@ export default function MapPage() {
 
   const zoomToRow = (lat, lon) => {
     if (!mapRef.current || !lat || !lon) return;
+    const coord = fromLonLat([lon, lat]);
+    setSelectedCoord(coord);
     mapRef.current.getView().animate({
-      center: fromLonLat([lon, lat]),
-      zoom: 16,
+      center: coord,
       duration: 600
     });
   };
@@ -1747,10 +2050,10 @@ export default function MapPage() {
     }
     
     const coord = fromLonLat([lon, lat]);
+    setSelectedCoord(coord);
     
     mapRef.current.getView().animate({
       center: coord,
-      zoom: 17,
       duration: 600
     });
     
@@ -1778,6 +2081,8 @@ export default function MapPage() {
         customPlottedFiles={plottedFiles}
         onDeleteCustomPlot={deleteCustomPlot}
         onOpenAttributeTable={handleOpenAttributeTable}
+        minioPlottedFolders={minioPlottedFolders}
+        onDeleteMinioPlot={deleteMinioPlot}
       />
 
       {/* ── Basemap Switcher (bottom-left, over map) ── */}
@@ -1878,6 +2183,7 @@ export default function MapPage() {
               onClose={() => {
                 overlayRef.current?.setPosition(undefined);
                 setSelectedShop(null);
+                setSelectedCoord(null);
               }}
               onViewDetail={(id) => navigate(`/complaints/${id}`)}
               onStreetView={() => selectedShop && openStreetView(selectedShop.latitude, selectedShop.longitude)}
@@ -1890,6 +2196,7 @@ export default function MapPage() {
               onClose={() => {
                 overlayRef.current?.setPosition(undefined);
                 setSelectedCustomPoint(null);
+                setSelectedCoord(null);
               }}
             />
           )}
@@ -1914,6 +2221,8 @@ export default function MapPage() {
             plottedFiles={plottedFiles}
             navigate={navigate}
             onShowProfile={handleShowInspectorProfile}
+            selectedShop={selectedShop}
+            selectedCustomPoint={selectedCustomPoint}
           />
         )}
       </div>
@@ -2006,6 +2315,15 @@ export default function MapPage() {
               }`}
           >
             Custom Tabular
+          </button>
+          <button
+            onClick={() => setSidebarTab('minio')}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center border-b-2 transition-all ${sidebarTab === 'minio'
+                ? 'border-emerald-500 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+          >
+            Explorer
           </button>
         </div>
 
@@ -2152,9 +2470,11 @@ export default function MapPage() {
                         onClick={() => {
                           setSelectedShop(c);
                           setShowList(false);
+                          const coord = fromLonLat([c.longitude, c.latitude]);
+                          setSelectedCoord(coord);
                           mapRef.current?.getView().animate({
-                            center: fromLonLat([c.longitude, c.latitude]),
-                            zoom: 15, duration: 600,
+                            center: coord,
+                            duration: 600,
                           });
                         }}
                         className="w-full p-3 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-left transition-all group"
@@ -2362,6 +2682,95 @@ export default function MapPage() {
               </div>
             )}
 
+          </div>
+        )}
+
+        {sidebarTab === 'minio' && (
+          <div className="flex-1 flex flex-col overflow-auto p-4 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                <FiHardDrive size={12} /> MinIO Explorer
+              </p>
+              <div className="flex gap-2">
+                <button onClick={fetchMinioFolders} className="text-slate-400 hover:text-white" title="Refresh Folders">
+                  <FiRefreshCw size={12} className={minioLoading ? 'animate-spin' : ''} />
+                </button>
+                <button onClick={clearMinioPlots} className="text-red-400 hover:text-red-300 text-xs font-medium">
+                  Clear Map
+                </button>
+              </div>
+            </div>
+
+            {minioLoading ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                <FiLoader size={14} className="animate-spin text-emerald-400" />
+                <span>Loading folders...</span>
+              </div>
+            ) : minioFolders.length === 0 ? (
+              <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 text-center text-xs text-slate-400">
+                No folders found.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {minioFolders.map(node => (
+                  <MapMinioNode
+                    key={node.path}
+                    node={node}
+                    depth={0}
+                    expandedFolders={minioExpanded}
+                    toggleFolder={toggleMinioFolder}
+                    folderGpsData={folderGpsData}
+                    plotFolderGps={plotMinioGps}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Plotted Statistics Summary */}
+            {minioPlottedFolders.length > 0 && (
+              <div className="space-y-2 mt-4 pt-4 border-t border-slate-700/50">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wide px-1">
+                  <span>Plotted Folders ({minioPlottedFolders.length})</span>
+                  <button
+                    onClick={clearMinioPlots}
+                    className="text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {minioPlottedFolders.map((file) => (
+                    <div key={file.filename} className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: file.color }} />
+                          <span className="font-bold text-white truncate" title={file.filename}>{file.filename}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => zoomToLayer(file.filename)}
+                            className="text-slate-400 hover:text-white transition-colors"
+                            title="Zoom to layer"
+                          >
+                            <FiZoomIn size={14} />
+                          </button>
+                          <button
+                            onClick={() => deleteMinioPlot(file.filename)}
+                            className="text-slate-400 hover:text-red-400 transition-colors"
+                            title="Delete plot"
+                          >
+                            <FiX size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Images Plotted: <span className="font-semibold text-slate-200">{file.success}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
